@@ -169,14 +169,17 @@ import { FormsModule } from '@angular/forms';
       color: #ff4444;
     }
 
-    .loader {
-      display: inline-block;
-      width: 20px;
-      height: 20px;
-      border: 2px solid #000;
-      border-bottom-color: transparent;
-      border-radius: 50%;
-      animation: rotation 1s linear infinite;
+    @media (max-width: 480px) {
+      .login-container { padding: 0; }
+      .login-card { 
+        height: 100%; 
+        max-width: none; 
+        border-radius: 0; 
+        display: flex; 
+        flex-direction: column; 
+        justify-content: center;
+        padding: 30px;
+      }
     }
 
     @keyframes rotation {

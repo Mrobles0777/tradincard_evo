@@ -302,7 +302,9 @@ video {
   animation: slideDown 0.3s ease-out;
 }
 
-@keyframes slideDown {
-  from { transform: translateY(-20px); opacity: 0; }
-  to { transform: translateY(0); opacity: 1; }
+@media (max-width: 400px) {
+  .card-guide {
+    width: 220px;
+    height: 310px;
+  }
 }
