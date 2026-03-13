@@ -11,21 +11,42 @@ import { FormsModule } from '@angular/forms';
     <div class="login-container animate-fade-in">
       <div class="login-card glass">
         <h1>Tradincard Evo</h1>
-        <p>Ingresa para guardar tus evaluaciones y gestionar tu colección.</p>
+        <p>{{ isRegisterMode() ? 'Crea tu cuenta para empezar' : 'Ingresa para gestionar tu colección' }}</p>
         
-        <form (ngSubmit)="login()">
+        <form (ngSubmit)="handleSubmit()">
           <div class="input-group">
             <label>Correo Electrónico</label>
             <input type="email" [(ngModel)]="email" name="email" placeholder="tu@email.com" required>
           </div>
+
+          <div class="input-group">
+            <label>Contraseña</label>
+            <div class="password-wrapper">
+              <input [type]="showPassword() ? 'text' : 'password'" 
+                     [(ngModel)]="password" 
+                     name="password" 
+                     placeholder="••••••••" 
+                     required>
+              <button type="button" class="toggle-password" (click)="showPassword.set(!showPassword())">
+                {{ showPassword() ? '👁️' : '🙈' }}
+              </button>
+            </div>
+            <small *ngIf="isRegisterMode()" class="hint">Al menos 6 caracteres</small>
+          </div>
           
           <button type="submit" [disabled]="isLoading()" class="login-btn">
-            <span *ngIf="!isLoading()">Enviar Enlace Mágico</span>
-            <span *ngIf="isLoading()" class="loader">Enviando...</span>
+            <span *ngIf="!isLoading()">{{ isRegisterMode() ? 'Crear Cuenta' : 'Iniciar Sesión' }}</span>
+            <span *ngIf="isLoading()" class="loader"></span>
           </button>
         </form>
 
-        <div class="message" *ngIf="message()">
+        <div class="mode-switch">
+          <button (click)="isRegisterMode.set(!isRegisterMode())">
+            {{ isRegisterMode() ? '¿Ya tienes cuenta? Inicia sesión' : '¿No tienes cuenta? Regístrate' }}
+          </button>
+        </div>
+
+        <div class="message" [class.error]="isError()" *ngIf="message()">
           {{ message() }}
         </div>
       </div>
@@ -48,7 +69,7 @@ import { FormsModule } from '@angular/forms';
       text-align: center;
     }
 
-    h1 { margin-bottom: 10px; font-size: 32px; }
+    h1 { margin-bottom: 10px; font-size: 32px; letter-spacing: -1px; }
     p { color: #888; margin-bottom: 30px; font-size: 14px; }
 
     .input-group {
@@ -65,6 +86,12 @@ import { FormsModule } from '@angular/forms';
       text-transform: uppercase;
     }
 
+    .password-wrapper {
+      position: relative;
+      display: flex;
+      align-items: center;
+    }
+
     input {
       width: 100%;
       padding: 12px;
@@ -73,6 +100,30 @@ import { FormsModule } from '@angular/forms';
       border-radius: 8px;
       color: #fff;
       font-size: 16px;
+      transition: all 0.3s;
+    }
+
+    input:focus {
+      outline: none;
+      border-color: #fff;
+      background: rgba(255,255,255,0.1);
+    }
+
+    .toggle-password {
+      position: absolute;
+      right: 12px;
+      background: none;
+      border: none;
+      font-size: 18px;
+      cursor: pointer;
+      opacity: 0.6;
+    }
+
+    .hint {
+      display: block;
+      margin-top: 4px;
+      font-size: 11px;
+      color: #666;
     }
 
     .login-btn {
@@ -86,6 +137,22 @@ import { FormsModule } from '@angular/forms';
       font-size: 16px;
       cursor: pointer;
       margin-top: 10px;
+      transition: transform 0.2s;
+    }
+
+    .login-btn:active { transform: scale(0.98); }
+
+    .mode-switch {
+      margin-top: 25px;
+    }
+
+    .mode-switch button {
+      background: none;
+      border: none;
+      color: #888;
+      font-size: 14px;
+      cursor: pointer;
+      text-decoration: underline;
     }
 
     .message {
@@ -95,6 +162,11 @@ import { FormsModule } from '@angular/forms';
       color: #00ff88;
       border-radius: 8px;
       font-size: 14px;
+    }
+
+    .message.error {
+      background: rgba(255, 68, 68, 0.1);
+      color: #ff4444;
     }
 
     .loader {
@@ -115,20 +187,39 @@ import { FormsModule } from '@angular/forms';
 })
 export class LoginComponent {
   email = '';
+  password = '';
   isLoading = signal(false);
+  isRegisterMode = signal(false);
+  showPassword = signal(false);
   message = signal<string | null>(null);
+  isError = signal(false);
 
   constructor(private supabase: SupabaseService) {}
 
-  async login() {
+  async handleSubmit() {
+    if (this.password.length < 6) {
+      this.message.set('La contraseña debe tener al menos 6 caracteres.');
+      this.isError.set(true);
+      return;
+    }
+
     this.isLoading.set(true);
     this.message.set(null);
+    this.isError.set(false);
+
     try {
-      const { error } = await this.supabase.signInWithEmail(this.email);
-      if (error) throw error;
-      this.message.set('¡Enlace enviado! Revisa tu correo bandeja de entrada.');
+      if (this.isRegisterMode()) {
+        const { error } = await this.supabase.signUpWithPassword(this.email, this.password);
+        if (error) throw error;
+        this.message.set('¡Registro exitoso! Ya puedes iniciar sesión.');
+        this.isRegisterMode.set(false);
+      } else {
+        const { error } = await this.supabase.signInWithPassword(this.email, this.password);
+        if (error) throw error;
+      }
     } catch (err: any) {
-      this.message.set('Error: ' + err.message);
+      this.message.set(err.message);
+      this.isError.set(true);
     } finally {
       this.isLoading.set(false);
     }

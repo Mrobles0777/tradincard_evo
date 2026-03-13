@@ -20,6 +20,14 @@ export class SupabaseService {
     return await this.supabase.auth.signInWithOtp({ email });
   }
 
+  async signUpWithPassword(email: string, password: string) {
+    return await this.supabase.auth.signUp({ email, password });
+  }
+
+  async signInWithPassword(email: string, password: string) {
+    return await this.supabase.auth.signInWithPassword({ email, password });
+  }
+
   async signOut() {
     return await this.supabase.auth.signOut();
   }
