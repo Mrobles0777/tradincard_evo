@@ -1,0 +1,31 @@
+<div class="collection-container">
+  <header>
+    <h1>Mi Colección</h1>
+    <p>{{ evaluations().length }} cartas evaluadas</p>
+  </header>
+
+  <div class="grid" *ngIf="!isLoading(); else loadingTpl">
+    <div class="card-item animate-fade-in" *ngFor="let ev of evaluations()" [routerLink]="['/grading', ev.id]">
+      <div class="thumb">
+        <img [src]="ev.thumbnailUrl" alt="Thumbnail">
+        <div class="grade-badge-mini">{{ ev.psa_grade }}</div>
+      </div>
+      <div class="info">
+        <h3>{{ ev.card_name_free || 'Sin nombre' }}</h3>
+        <p>{{ ev.card_type | titlecase }} • {{ ev.created_at | date:'shortDate' }}</p>
+      </div>
+    </div>
+
+    <div class="empty-state" *ngIf="evaluations().length === 0">
+      <div class="icon">🎴</div>
+      <p>Aún no tienes evaluaciones.</p>
+      <button routerLink="/capture">Escanear primera carta</button>
+    </div>
+  </div>
+</div>
+
+<ng-template #loadingTpl>
+  <div class="loading-state">
+    <div class="loader"></div>
+  </div>
+</ng-template>

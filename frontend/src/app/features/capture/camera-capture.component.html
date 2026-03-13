@@ -1,0 +1,30 @@
+<div class="camera-container">
+  <video #videoElement autoplay playsinline muted></video>
+  
+  <!-- Overlay / Guide Mask -->
+  <div class="overlay">
+    <div class="card-guide" [class.analyzing]="isAnalyzing()">
+      <div class="corner tl"></div>
+      <div class="corner tr"></div>
+      <div class="corner bl"></div>
+      <div class="corner br"></div>
+    </div>
+  </div>
+
+  <div class="controls">
+    <div class="type-selector" *ngIf="!isAnalyzing()">
+      <button [class.active]="cardType() === 'pokemon'" (click)="setCardType('pokemon')">Pokémon</button>
+      <button [class.active]="cardType() === 'yugioh'" (click)="setCardType('yugioh')">Yu-Gi-Oh!</button>
+      <button [class.active]="cardType() === 'football'" (click)="setCardType('football')">Football</button>
+    </div>
+
+    <button class="capture-btn" (click)="capture()" [disabled]="isAnalyzing()">
+      <span *ngIf="!isAnalyzing()">Analizar Carta</span>
+      <span *ngIf="isAnalyzing()" class="loader">Analizando...</span>
+    </button>
+  </div>
+
+  <div class="error-toast" *ngIf="error()">
+    {{ error() }}
+  </div>
+</div>

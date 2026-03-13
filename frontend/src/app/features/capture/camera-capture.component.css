@@ -1,0 +1,139 @@
+.camera-container {
+  position: relative;
+  width: 100%;
+  height: 100vh;
+  background: #000;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.card-guide {
+  width: 280px;
+  height: 390px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-radius: 16px;
+  position: relative;
+  box-shadow: 0 0 0 1000px rgba(0, 0, 0, 0.5);
+  transition: all 0.3s ease;
+}
+
+.card-guide.analyzing {
+  border-color: #00ff88;
+  box-shadow: 0 0 20px #00ff88, 0 0 0 1000px rgba(0, 0, 0, 0.7);
+  animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+  0% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.02); opacity: 0.8; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+.corner {
+  position: absolute;
+  width: 30px;
+  height: 30px;
+  border: 4px solid #fff;
+}
+
+.tl { top: -2px; left: -2px; border-right: 0; border-bottom: 0; border-top-left-radius: 16px; }
+.tr { top: -2px; right: -2px; border-left: 0; border-bottom: 0; border-top-right-radius: 16px; }
+.bl { bottom: -2px; left: -2px; border-right: 0; border-top: 0; border-bottom-left-radius: 16px; }
+.br { bottom: -2px; right: -2px; border-left: 0; border-top: 0; border-bottom-right-radius: 16px; }
+
+.controls {
+  position: absolute;
+  bottom: 40px;
+  left: 0;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+  padding: 0 20px;
+}
+
+.type-selector {
+  display: flex;
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(10px);
+  padding: 4px;
+  border-radius: 12px;
+  gap: 4px;
+}
+
+.type-selector button {
+  background: transparent;
+  border: none;
+  color: #fff;
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.type-selector button.active {
+  background: #fff;
+  color: #000;
+  font-weight: 600;
+}
+
+.capture-btn {
+  background: white;
+  border: none;
+  padding: 16px 48px;
+  border-radius: 30px;
+  font-size: 18px;
+  font-weight: 700;
+  color: #000;
+  cursor: pointer;
+  box-shadow: 0 10px 20px rgba(0,0,0,0.3);
+  transition: transform 0.2s;
+}
+
+.capture-btn:active {
+  transform: scale(0.95);
+}
+
+.capture-btn:disabled {
+  background: #ccc;
+  cursor: not-allowed;
+}
+
+.error-toast {
+  position: absolute;
+  top: 20px;
+  left: 20px;
+  right: 20px;
+  background: #ff4444;
+  color: #fff;
+  padding: 12px;
+  border-radius: 8px;
+  text-align: center;
+}
+
+.loader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}

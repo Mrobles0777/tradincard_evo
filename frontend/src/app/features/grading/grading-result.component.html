@@ -1,0 +1,84 @@
+<div class="result-container" *ngIf="!isLoading(); else loadingTpl">
+  <header>
+    <a routerLink="/capture" class="back-btn">←</a>
+    <h1>Resultado de Evaluación</h1>
+  </header>
+
+  <div class="result-card" *ngIf="evaluation()">
+    <div class="image-preview">
+      <img [src]="imageUrl()" alt="Carta capturada">
+    </div>
+
+    <div class="summary-section">
+      <app-grade-badge 
+        [grade]="evaluation().psa_grade" 
+        [label]="evaluation().psa_label">
+      </app-grade-badge>
+      
+      <div class="card-info">
+        <h3>{{ evaluation().card_name_free || 'Carta Detectada' }}</h3>
+        <p>{{ evaluation().card_type | titlecase }}</p>
+      </div>
+    </div>
+
+    <div class="scores-grid">
+      <div class="score-item">
+        <div class="score-header">
+          <span>Centrado</span>
+          <span class="value">{{ evaluation().score_centering }}</span>
+        </div>
+        <div class="progress-bar">
+          <div class="fill" [style.width]="getScoreWidth(evaluation().score_centering)"></div>
+        </div>
+        <small>{{ evaluation().ai_analysis?.centering?.detail }}</small>
+      </div>
+
+      <div class="score-item">
+        <div class="score-header">
+          <span>Esquinas</span>
+          <span class="value">{{ evaluation().score_corners }}</span>
+        </div>
+        <div class="progress-bar">
+          <div class="fill" [style.width]="getScoreWidth(evaluation().score_corners)"></div>
+        </div>
+        <small>{{ evaluation().ai_analysis?.corners?.detail }}</small>
+      </div>
+
+      <div class="score-item">
+        <div class="score-header">
+          <span>Bordes</span>
+          <span class="value">{{ evaluation().score_edges }}</span>
+        </div>
+        <div class="progress-bar">
+          <div class="fill" [style.width]="getScoreWidth(evaluation().score_edges)"></div>
+        </div>
+        <small>{{ evaluation().ai_analysis?.edges?.detail }}</small>
+      </div>
+
+      <div class="score-item">
+        <div class="score-header">
+          <span>Superficie</span>
+          <span class="value">{{ evaluation().score_surface }}</span>
+        </div>
+        <div class="progress-bar">
+          <div class="fill" [style.width]="getScoreWidth(evaluation().score_surface)"></div>
+        </div>
+        <small>{{ evaluation().ai_analysis?.surface?.detail }}</small>
+      </div>
+    </div>
+
+    <div class="analysis-notes">
+      <h4>Análisis Detallado</h4>
+      <p>{{ evaluation().ai_analysis?.summary }}</p>
+    </div>
+
+    <button class="save-btn" routerLink="/collection">Guardar en Colección</button>
+  </div>
+</div>
+
+<ng-template #loadingTpl>
+  <div class="loading-state">
+    <div class="loader"></div>
+    <p>Cargando resultados...</p>
+  </div>
+</ng-template>
