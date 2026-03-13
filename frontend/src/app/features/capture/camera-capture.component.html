@@ -1,14 +1,44 @@
 <div class="camera-container">
-  <video #videoElement autoplay playsinline muted></video>
   
-  <!-- Overlay / Guide Mask -->
-  <div class="overlay">
-    <div class="card-guide" [class.analyzing]="isAnalyzing()">
-      <div class="corner tl"></div>
-      <div class="corner tr"></div>
-      <div class="corner bl"></div>
-      <div class="corner br"></div>
+  <!-- Upload Mode -->
+  <div class="upload-area glass" *ngIf="method() === 'upload'" [class.analyzing]="isAnalyzing()">
+    <div class="upload-content" *ngIf="!previewUrl()">
+      <div class="icon">📁</div>
+      <h2>Cargar Carta</h2>
+      <p>Selecciona una foto clara del frente de tu carta</p>
+      <input type="file" id="fileInput" (change)="onFileSelected($event)" accept="image/*" class="file-input">
+      <label for="fileInput" class="upload-btn primary">Seleccionar Archivo</label>
     </div>
+
+    <div class="preview-content" *ngIf="previewUrl()">
+      <div class="preview-wrapper">
+        <img [src]="previewUrl()" alt="Vista previa" class="preview-img">
+        <div class="preview-overlay" *ngIf="isAnalyzing()">
+          <div class="scanning-line"></div>
+        </div>
+      </div>
+      <button class="change-file" (click)="previewUrl.set(null); selectedBase64 = null" *ngIf="!isAnalyzing()">Cambiar Imagen</button>
+    </div>
+
+    <button class="switch-method" (click)="setMethod('camera')" *ngIf="!isAnalyzing()">
+      📷 Usar Cámara en Vivo
+    </button>
+  </div>
+
+  <!-- Camera Mode -->
+  <div class="camera-stream" *ngIf="method() === 'camera'">
+    <video #videoElement autoplay playsinline muted></video>
+    
+    <div class="overlay">
+      <div class="card-guide" [class.analyzing]="isAnalyzing()">
+        <div class="corner tl"></div><div class="corner tr"></div>
+        <div class="corner bl"></div><div class="corner br"></div>
+      </div>
+    </div>
+
+    <button class="switch-method top" (click)="setMethod('upload')" *ngIf="!isAnalyzing()">
+      📁 Volver a Cargar Archivo
+    </button>
   </div>
 
   <div class="controls">
@@ -18,9 +48,12 @@
       <button [class.active]="cardType() === 'football'" (click)="setCardType('football')">Football</button>
     </div>
 
-    <button class="capture-btn" (click)="capture()" [disabled]="isAnalyzing()">
-      <span *ngIf="!isAnalyzing()">Analizar Carta</span>
-      <span *ngIf="isAnalyzing()" class="loader">Analizando...</span>
+    <button class="capture-btn" (click)="capture()" [disabled]="isAnalyzing() || (method() === 'upload' && !selectedBase64)">
+      <span *ngIf="!isAnalyzing()">{{ method() === 'upload' ? 'Analizar Archivo' : 'Capturar y Analizar' }}</span>
+      <div *ngIf="isAnalyzing()" class="analysis-state">
+        <span class="loader"></span>
+        <span>Analizando...</span>
+      </div>
     </button>
   </div>
 
