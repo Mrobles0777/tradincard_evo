@@ -48,10 +48,11 @@ serve(async (req) => {
     'Access-Control-Allow-Origin': origin,
     'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Access-Control-Allow-Credentials': 'true',
     'Access-Control-Max-Age': '86400',
   };
 
-  console.log(`[HTTP] ${req.method} from ${origin}`);
+  console.log(`[HTTP] ${req.method} | Origin: ${origin} | UA: ${req.headers.get('user-agent')}`);
 
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
@@ -62,24 +63,31 @@ serve(async (req) => {
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
     const geminiKey = Deno.env.get("GEMINI_API_KEY");
 
-    console.log("[ENV] SUPABASE_URL:", !!supabaseUrl);
-    console.log("[ENV] SUPABASE_SERVICE_ROLE_KEY:", !!supabaseKey);
-    console.log("[ENV] GEMINI_API_KEY:", !!geminiKey);
-
     if (!supabaseUrl || !supabaseKey || !geminiKey) {
-      throw new Error(`Faltan variables de entorno: URL=${!!supabaseUrl}, KEY=${!!supabaseKey}, GEMINI=${!!geminiKey}`);
+      console.error("[ENV ERROR] Missing required variables");
+      throw new Error("Missing environment configuration");
     }
 
-    const { imageBase64, cardType, evaluationId } = await req.json();
-    console.log(`[REQ] Analizando ${cardType} id=${evaluationId}. Image size: ${Math.round(imageBase64.length / 1024)}KB`);
+    // Leer el body de forma segura
+    let body;
+    try {
+      body = await req.json();
+    } catch (e: any) {
+      console.error("[BODY ERROR] Fail to parse JSON:", e.message);
+      throw new Error("Invalid JSON payload");
+    }
 
-    if (!imageBase64 || imageBase64.length < 100) {
-      throw new Error("Imagen no válida o vacía");
+    const { imageBase64, cardType, evaluationId } = body;
+    const imgSize = imageBase64 ? Math.round(imageBase64.length / 1024) : 0;
+    console.log(`[REQ] Data: type=${cardType}, id=${evaluationId}, size=${imgSize}KB`);
+
+    if (!imageBase64 || imageBase64.length < 10) {
+      throw new Error("No image data provided");
     }
 
     // Call Gemini
-    console.log("[GEMINI] Solicitando análisis...");
-    const response = await fetch(`${GEMINI_URL}?key=${geminiKey}`, {
+    console.log("[GEMINI] Calling API...");
+    const genResponse = await fetch(`${GEMINI_URL}?key=${geminiKey}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -93,35 +101,34 @@ serve(async (req) => {
       })
     });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error(`[GEMINI] ERROR: ${response.status} - ${errorText}`);
-      throw new Error(`Gemini API falló: ${response.status}`);
+    if (!genResponse.ok) {
+      const errorText = await genResponse.text();
+      console.error(`[GEMINI ERROR] Status ${genResponse.status}: ${errorText}`);
+      throw new Error(`Gemini API error: ${genResponse.status}`);
     }
 
-    const geminiData = await response.json();
+    const geminiData = await genResponse.json();
     const textResult = geminiData.candidates?.[0]?.content?.parts?.[0]?.text;
     
     if (!textResult) {
-      console.error("[GEMINI] Full response:", JSON.stringify(geminiData));
-      throw new Error("Gemini no devolvió texto");
+      throw new Error("No candidates received from Gemini");
     }
 
     const jsonMatch = textResult.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
-      console.error("[AI] Formato texto no JSON:", textResult);
-      throw new Error("Gemini no devolvió JSON");
+      console.error("[AI FORMAT ERROR]", textResult);
+      throw new Error("AI response did not contain valid JSON");
     }
     
     const analysis = JSON.parse(jsonMatch[0]);
 
-    // Cálculo PSA
+    // Scores PSA
     const scores = [analysis.centering.score, analysis.corners.score, analysis.edges.score, analysis.surface.score];
     const finalGrade = Math.min(Math.min(...scores) + 0.5, scores.reduce((a, b) => a + b) / 4).toFixed(1);
 
-    // DB Update
+    // Save to DB
     const supabase = createClient(supabaseUrl, supabaseKey);
-    const { error: updateError } = await supabase.from("evaluations").update({
+    const { error: dbError } = await supabase.from("evaluations").update({
       score_centering: analysis.centering.score,
       score_corners: analysis.corners.score,
       score_edges: analysis.edges.score,
@@ -136,20 +143,21 @@ serve(async (req) => {
       updated_at: new Date().toISOString()
     }).eq("id", evaluationId);
 
-    if (updateError) {
-      console.error("[DB] ERROR:", updateError);
-      throw updateError;
+    if (dbError) {
+      console.error("[DB ERROR]", dbError);
+      throw dbError;
     }
 
-    console.log("[SUCCESS] Análisis completado.");
+    console.log("[SUCCESS] Analysis complete");
     return new Response(JSON.stringify({ ...analysis, final_grade: finalGrade }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" }
     });
 
   } catch (error: any) {
-    console.error("[CRITICAL]", error.message);
-    return new Response(JSON.stringify({ error: error.message }), {
-      status: 500,
+    console.error(`[FATAL] ${error.message}`);
+    const errorBody = JSON.stringify({ error: error.message });
+    return new Response(errorBody, {
+      status: 400, // Usar 400 para errores de cliente/logica
       headers: { ...corsHeaders, "Content-Type": "application/json" }
     });
   }
