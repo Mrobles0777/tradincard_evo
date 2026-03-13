@@ -4,6 +4,11 @@
     <h1>Resultado de Evaluación</h1>
   </header>
 
+  <div class="error-msg" *ngIf="error()">
+    <p>{{ error() }}</p>
+    <button (click)="startPolling(evaluation().id)" class="retry-btn">Reintentar</button>
+  </div>
+
   <div class="result-card" *ngIf="evaluation()">
     <div class="image-preview">
       <img [src]="imageUrl()" alt="Carta capturada">

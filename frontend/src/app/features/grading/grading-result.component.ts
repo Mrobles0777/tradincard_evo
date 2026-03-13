@@ -16,6 +16,7 @@ export class GradingResultComponent implements OnInit, OnDestroy {
   evaluation = signal<any>(null);
   imageUrl = signal<string | null>(null);
   isLoading = signal(true);
+  error = signal<string | null>(null);
   pollingInterval: any;
 
   constructor(
@@ -38,6 +39,7 @@ export class GradingResultComponent implements OnInit, OnDestroy {
 
   async startPolling(id: string) {
     this.isLoading.set(true);
+    this.error.set(null);
     
     // Attempt to load data immediately
     await this.loadData(id);
@@ -49,10 +51,18 @@ export class GradingResultComponent implements OnInit, OnDestroy {
         attempts++;
         await this.loadData(id);
         
-        // Stop if we have a grade, or after 30 seconds (15 attempts * 2s)
-        if ((this.evaluation() && this.evaluation().psa_grade) || attempts > 15) {
+        // Stop if we have a grade
+        if (this.evaluation() && this.evaluation().psa_grade) {
           clearInterval(this.pollingInterval);
           this.isLoading.set(false);
+          return;
+        }
+
+        // Timeout after 30 seconds (15 attempts * 2s)
+        if (attempts > 15) {
+          clearInterval(this.pollingInterval);
+          this.isLoading.set(false);
+          this.error.set('La evaluación está tardando más de lo esperado. Por favor, revisa tu conexión o intenta de nuevo más tarde.');
         }
       }, 2000);
     } else {
@@ -66,7 +76,6 @@ export class GradingResultComponent implements OnInit, OnDestroy {
       if (data) {
         this.evaluation.set(data);
         const fileName = `${data.user_id}/${data.id}_front.jpg`;
-        // Constructor of URL should be safe now that bucket is public
         this.imageUrl.set(this.supabaseService.getPublicUrl(fileName));
       }
     } catch (err) {
@@ -74,7 +83,8 @@ export class GradingResultComponent implements OnInit, OnDestroy {
     }
   }
 
-  getScoreWidth(score: number): string {
+  getScoreWidth(score: number | undefined | null): string {
+    if (score === undefined || score === null) return '0%';
     return `${(score / 10) * 100}%`;
   }
 }

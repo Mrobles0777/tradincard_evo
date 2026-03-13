@@ -92,14 +92,26 @@ serve(async (req) => {
     }
 
     const geminiData = await genResponse.json();
+    console.log(`[GEMINI RAW]`, JSON.stringify(geminiData));
+
     const textResult = geminiData.candidates?.[0]?.content?.parts?.[0]?.text;
     
-    if (!textResult) throw new Error("Gemini returned an empty response");
+    if (!textResult) {
+      if (geminiData.promptFeedback?.blockReason) {
+        throw new Error(`Gemini bloqueó el contenido: ${geminiData.promptFeedback.blockReason}`);
+      }
+      throw new Error("Gemini devolvió una respuesta vacía.");
+    }
 
     const jsonMatch = textResult.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) throw new Error("AI did not return a valid JSON format");
+    if (!jsonMatch) {
+      console.error("[GEMINI TEXT]", textResult);
+      throw new Error("La IA no devolvió un formato JSON válido.");
+    }
     
     const analysis = JSON.parse(jsonMatch[0]);
+    console.log(`[ANALYSIS]`, JSON.stringify(analysis));
+
     const scores = [analysis.centering.score, analysis.corners.score, analysis.edges.score, analysis.surface.score];
     const finalGrade = Math.min(Math.min(...scores) + 0.5, scores.reduce((a, b) => a + b) / 4).toFixed(1);
 
@@ -120,16 +132,19 @@ serve(async (req) => {
       updated_at: new Date().toISOString()
     }).eq("id", evaluationId);
 
-    if (dbError) throw dbError;
+    if (dbError) {
+      console.error("[DB ERROR]", dbError);
+      throw dbError;
+    }
 
     return new Response(JSON.stringify({ ...analysis, final_grade: finalGrade }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" }
     });
 
   } catch (error: any) {
-    console.error(`[EXECUTION ERROR] ${error.message}`);
+    console.error(`[FATAL] ${error.message}`);
     return new Response(JSON.stringify({ error: error.message }), {
-      status: 200, // Return 200 with error object so the frontend can catch the message easily
+      status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" }
     });
   }

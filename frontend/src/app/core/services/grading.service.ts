@@ -16,7 +16,15 @@ export class GradingService {
       }
     });
 
-    if (error) throw error;
+    if (error) {
+      console.error('[INVOKE ERROR]', error);
+      throw error;
+    }
+    
+    if (data && data.error) {
+      throw new Error(data.error);
+    }
+
     return data;
   }
 
