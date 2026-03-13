@@ -8,6 +8,11 @@
   color: #fff;
 }
 
+/* Add padding to the main areas so they don't hide behind controls */
+.upload-area, .camera-stream {
+  padding-bottom: 200px !important; 
+}
+
 /* --- Upload Area Styles --- */
 .upload-area {
   flex: 1;
@@ -203,10 +208,17 @@ video {
 
 /* --- Controls --- */
 .controls {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
   padding: 32px 24px;
   padding-bottom: calc(32px + env(safe-area-inset-bottom));
-  background: linear-gradient(to top, #000 70%, transparent);
-  z-index: 50;
+  background: linear-gradient(to top, #000 85%, transparent);
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
 }
 
 .type-selector {
@@ -250,6 +262,16 @@ video {
   gap: 12px;
   transition: all 0.3s;
   cursor: pointer;
+}
+
+.btn-content {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.btn-icon {
+  font-size: 20px;
 }
 
 .capture-btn:hover:not(:disabled) {

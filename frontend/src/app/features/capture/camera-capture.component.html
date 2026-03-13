@@ -49,7 +49,10 @@
     </div>
 
     <button class="capture-btn" (click)="capture()" [disabled]="isAnalyzing() || (method() === 'upload' && !selectedBase64)">
-      <span *ngIf="!isAnalyzing()">{{ method() === 'upload' ? 'Analizar Archivo' : 'Capturar y Analizar' }}</span>
+      <div *ngIf="!isAnalyzing()" class="btn-content">
+        <span class="btn-icon">{{ method() === 'upload' ? '🔍' : '📸' }}</span>
+        <span>{{ method() === 'upload' ? 'Analizar Carta Seleccionada' : 'Capturar y Analizar Carta' }}</span>
+      </div>
       <div *ngIf="isAnalyzing()" class="analysis-state">
         <span class="loader"></span>
         <span>Analizando...</span>
