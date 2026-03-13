@@ -1,16 +1,18 @@
-import { Component } from '@angular/core';
-import { RouterModule } from '@angular/router';
+import { Component, OnInit, signal } from '@angular/core';
+import { RouterModule, Router } from '@angular/router';
+import { SupabaseService } from './core/services/supabase.service';
+import { CommonModule } from '@angular/common';
 
 @Component({
   selector: 'app-root',
   standalone: true,
-  imports: [RouterModule],
+  imports: [RouterModule, CommonModule],
   template: `
     <main>
       <router-outlet></router-outlet>
     </main>
 
-    <nav class="tab-bar">
+    <nav class="tab-bar" *ngIf="isLoggedIn()">
       <a routerLink="/capture" routerLinkActive="active" class="tab-item">
         <span class="icon">📷</span>
         <span class="label">Escanear</span>
@@ -19,10 +21,10 @@ import { RouterModule } from '@angular/router';
         <span class="icon">🎴</span>
         <span class="label">Colección</span>
       </a>
-      <a routerLink="/profile" routerLinkActive="active" class="tab-item">
-        <span class="icon">👤</span>
-        <span class="label">Perfil</span>
-      </a>
+      <button (click)="logout()" class="tab-item logout-btn">
+        <span class="icon">🚪</span>
+        <span class="label">Salir</span>
+      </button>
     </nav>
   `,
   styles: [`
@@ -56,6 +58,9 @@ import { RouterModule } from '@angular/router';
       color: #666;
       gap: 4px;
       transition: all 0.3s;
+      background: none;
+      border: none;
+      cursor: pointer;
     }
 
     .tab-item.active {
@@ -72,6 +77,29 @@ import { RouterModule } from '@angular/router';
       text-transform: uppercase;
       letter-spacing: 0.5px;
     }
+
+    .logout-btn:hover {
+      color: #ff4444;
+    }
   `]
 })
-export class AppComponent {}
+export class AppComponent implements OnInit {
+  isLoggedIn = signal(false);
+
+  constructor(private supabase: SupabaseService, private router: Router) {}
+
+  ngOnInit() {
+    this.supabase.client.auth.onAuthStateChange((event, session) => {
+      this.isLoggedIn.set(!!session);
+      if (!session) {
+        this.router.navigate(['/login']);
+      } else if (this.router.url === '/login') {
+        this.router.navigate(['/capture']);
+      }
+    });
+  }
+
+  async logout() {
+    await this.supabase.signOut();
+  }
+}
