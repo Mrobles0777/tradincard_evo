@@ -4,13 +4,6 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent";
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Max-Age': '86400',
-};
-
 const PSA_PROMPT = (cardType: string) => `
 Eres un experto certificado en grading de cartas coleccionables bajo el sistema PSA.
 Analiza esta imagen de una carta de ${cardType} y evalúa con precisión los 4 criterios PSA:
@@ -50,25 +43,43 @@ Responde SOLO en este JSON sin texto adicional:
 `;
 
 serve(async (req) => {
-  console.log(`${req.method} request received at ${new Date().toISOString()}`);
+  const origin = req.headers.get('origin') || '*';
+  const corsHeaders = {
+    'Access-Control-Allow-Origin': origin,
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Access-Control-Max-Age': '86400',
+  };
 
-  // Handle CORS preflight
+  console.log(`[HTTP] ${req.method} from ${origin}`);
+
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }
 
   try {
-    const body = await req.json();
-    const { imageBase64, cardType, evaluationId } = body;
-    console.log(`Analizando carta ${cardType} para evaluación ${evaluationId}...`);
+    const supabaseUrl = Deno.env.get("SUPABASE_URL");
+    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    const geminiKey = Deno.env.get("GEMINI_API_KEY");
 
-    const apiKey = Deno.env.get("GEMINI_API_KEY");
-    if (!apiKey) {
-      console.error("GEMINI_API_KEY no configurado en Supabase Secrets");
-      throw new Error("Configuración incompleta: GEMINI_API_KEY falante");
+    console.log("[ENV] SUPABASE_URL:", !!supabaseUrl);
+    console.log("[ENV] SUPABASE_SERVICE_ROLE_KEY:", !!supabaseKey);
+    console.log("[ENV] GEMINI_API_KEY:", !!geminiKey);
+
+    if (!supabaseUrl || !supabaseKey || !geminiKey) {
+      throw new Error(`Faltan variables de entorno: URL=${!!supabaseUrl}, KEY=${!!supabaseKey}, GEMINI=${!!geminiKey}`);
     }
 
-    const response = await fetch(`${GEMINI_URL}?key=${apiKey}`, {
+    const { imageBase64, cardType, evaluationId } = await req.json();
+    console.log(`[REQ] Analizando ${cardType} id=${evaluationId}. Image size: ${Math.round(imageBase64.length / 1024)}KB`);
+
+    if (!imageBase64 || imageBase64.length < 100) {
+      throw new Error("Imagen no válida o vacía");
+    }
+
+    // Call Gemini
+    console.log("[GEMINI] Solicitando análisis...");
+    const response = await fetch(`${GEMINI_URL}?key=${geminiKey}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -84,66 +95,59 @@ serve(async (req) => {
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error(`Error de Gemini API: ${response.status} - ${errorText}`);
-      throw new Error(`Gemini API falló con estado ${response.status}`);
+      console.error(`[GEMINI] ERROR: ${response.status} - ${errorText}`);
+      throw new Error(`Gemini API falló: ${response.status}`);
     }
 
     const geminiData = await response.json();
+    const textResult = geminiData.candidates?.[0]?.content?.parts?.[0]?.text;
     
-    if (!geminiData.candidates || geminiData.candidates.length === 0) {
-      throw new Error("No hubo candidatos de respuesta en Gemini API");
+    if (!textResult) {
+      console.error("[GEMINI] Full response:", JSON.stringify(geminiData));
+      throw new Error("Gemini no devolvió texto");
     }
 
-    const text = geminiData.candidates[0].content.parts[0].text;
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    const jsonMatch = textResult.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
-      console.error("Respuesta no válida de AI:", text);
-      throw new Error("El modelo no devolvió un formato JSON válido");
+      console.error("[AI] Formato texto no JSON:", textResult);
+      throw new Error("Gemini no devolvió JSON");
     }
     
     const analysis = JSON.parse(jsonMatch[0]);
 
-    // Calcular grade ponderado
-    const scores = [
-      analysis.centering.score, 
-      analysis.corners.score,
-      analysis.edges.score, 
-      analysis.surface.score
-    ];
-    const minScore = Math.min(...scores);
-    const avgScore = scores.reduce((a: number, b: number) => a + b) / 4;
-    const finalGrade = Math.min(minScore + 0.5, avgScore).toFixed(1);
+    // Cálculo PSA
+    const scores = [analysis.centering.score, analysis.corners.score, analysis.edges.score, analysis.surface.score];
+    const finalGrade = Math.min(Math.min(...scores) + 0.5, scores.reduce((a, b) => a + b) / 4).toFixed(1);
 
-    const supabase = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
-    );
-
+    // DB Update
+    const supabase = createClient(supabaseUrl, supabaseKey);
     const { error: updateError } = await supabase.from("evaluations").update({
-      score_centering:    analysis.centering.score,
-      score_corners:      analysis.corners.score,
-      score_edges:        analysis.edges.score,
-      score_surface:      analysis.surface.score,
+      score_centering: analysis.centering.score,
+      score_corners: analysis.corners.score,
+      score_edges: analysis.edges.score,
+      score_surface: analysis.surface.score,
       centering_front_lr: analysis.centering.front_lr,
       centering_front_tb: analysis.centering.front_tb,
-      psa_grade:          parseFloat(finalGrade),
-      psa_label:          analysis.psa_label,
-      psa_qualifier:      analysis.qualifier,
-      ai_analysis:        analysis,
-      confidence_pct:     analysis.confidence,
-      updated_at:         new Date().toISOString()
+      psa_grade: parseFloat(finalGrade),
+      psa_label: analysis.psa_label,
+      psa_qualifier: analysis.qualifier,
+      ai_analysis: analysis,
+      confidence_pct: analysis.confidence,
+      updated_at: new Date().toISOString()
     }).eq("id", evaluationId);
 
     if (updateError) {
-      console.error("Error actualizando DB:", updateError);
+      console.error("[DB] ERROR:", updateError);
       throw updateError;
     }
 
+    console.log("[SUCCESS] Análisis completado.");
     return new Response(JSON.stringify({ ...analysis, final_grade: finalGrade }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" }
     });
+
   } catch (error: any) {
-    console.error("Error en Edge Function:", error.message);
+    console.error("[CRITICAL]", error.message);
     return new Response(JSON.stringify({ error: error.message }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" }
