@@ -2,8 +2,8 @@
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-// v1beta is more flexible for flash models with inline_data
-const GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent";
+// Usando el endpoint V1 estable con el modelo flash
+const GEMINI_URL = "https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent";
 
 const PSA_PROMPT = (cardType: string) => `
 Eres un experto certificado en grading de cartas coleccionables bajo el sistema PSA.
@@ -62,19 +62,21 @@ serve(async (req) => {
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
     const geminiKey = Deno.env.get("GEMINI_API_KEY");
 
-    console.log(`[AUTH CHECK] Key present: ${!!geminiKey}, URL: ${supabaseUrl}`);
+    console.log(`[DIAGNOSTIC] Key set: ${!!geminiKey}, URL: ${supabaseUrl}`);
 
     if (!supabaseUrl || !supabaseKey || !geminiKey) {
-      throw new Error("Missing server configuration (URL/Keys). Ensure GEMINI_API_KEY is set in Supabase secrets.");
+      throw new Error("Missing configuration: GEMINI_API_KEY or SUPABASE_URL. Check secrets.");
     }
 
-    const { imageBase64, cardType, evaluationId } = await req.json();
-    console.log(`[REQ] Processing evaluation ${evaluationId} (${cardType})`);
+    const body = await req.json();
+    const { imageBase64, cardType, evaluationId } = body;
+    
+    console.log(`[REQ] ID: ${evaluationId}, Type: ${cardType}, ImageLength: ${imageBase64?.length}`);
 
-    if (!imageBase64) throw new Error("No image data provided");
+    if (!imageBase64) throw new Error("Base64 image is missing.");
 
-    // Gemini API Request
-    const genResponse = await fetch(`${GEMINI_URL}?key=${geminiKey}`, {
+    // Call Gemini
+    const response = await fetch(`${GEMINI_URL}?key=${geminiKey}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -88,37 +90,32 @@ serve(async (req) => {
       })
     });
 
-    if (!genResponse.ok) {
-      const errorData = await genResponse.json();
-      console.error("[GEMINI ERROR]", JSON.stringify(errorData));
-      throw new Error(`Gemini API error: ${genResponse.status}`);
-    }
-
-    const geminiData = await genResponse.json();
-    console.log(`[GEMINI RAW]`, JSON.stringify(geminiData));
-
-    const textResult = geminiData.candidates?.[0]?.content?.parts?.[0]?.text;
+    const result = await response.json();
     
-    if (!textResult) {
-      if (geminiData.promptFeedback?.blockReason) {
-        throw new Error(`Gemini bloqueó el contenido: ${geminiData.promptFeedback.blockReason}`);
-      }
-      throw new Error("Gemini devolvió una respuesta vacía.");
+    if (!response.ok) {
+      console.error("[GEMINI ERROR BODY]", JSON.stringify(result));
+      throw new Error(`Gemini API Error (${response.status}): ${result.error?.message || 'Unknown'}`);
     }
 
-    const jsonMatch = textResult.match(/\{[\s\S]*\}/);
+    console.log("[GEMINI RESPONSE OK]");
+    const text = result.candidates?.[0]?.content?.parts?.[0]?.text;
+    
+    if (!text) {
+      console.error("[GEMINI FULL RESPONSE]", JSON.stringify(result));
+      throw new Error("Gemini produced no text result. Check content safety or image quality.");
+    }
+
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
-      console.error("[GEMINI TEXT]", textResult);
-      throw new Error("La IA no devolvió un formato JSON válido.");
+      console.error("[RAW TEXT]", text);
+      throw new Error("AI did not return valid JSON.");
     }
-    
-    const analysis = JSON.parse(jsonMatch[0]);
-    console.log(`[ANALYSIS]`, JSON.stringify(analysis));
 
+    const analysis = JSON.parse(jsonMatch[0]);
     const scores = [analysis.centering.score, analysis.corners.score, analysis.edges.score, analysis.surface.score];
     const finalGrade = Math.min(Math.min(...scores) + 0.5, scores.reduce((a, b) => a + b) / 4).toFixed(1);
 
-    // Update Project Database
+    // Save to DB
     const supabase = createClient(supabaseUrl, supabaseKey);
     const { error: dbError } = await supabase.from("evaluations").update({
       score_centering: analysis.centering.score,
@@ -136,16 +133,18 @@ serve(async (req) => {
     }).eq("id", evaluationId);
 
     if (dbError) {
-      console.error("[DB ERROR]", dbError);
+      console.error("[DB UPDATE ERROR]", dbError);
       throw dbError;
     }
 
-    return new Response(JSON.stringify({ ...analysis, final_grade: finalGrade }), {
+    console.log(`[SUCCESS] Evaluation ${evaluationId} updated with grade ${finalGrade}`);
+
+    return new Response(JSON.stringify({ success: true, analysis }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" }
     });
 
   } catch (error: any) {
-    console.error(`[FATAL] ${error.message}`);
+    console.error(`[FATAL ERROR] ${error.message}`);
     return new Response(JSON.stringify({ error: error.message }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" }
