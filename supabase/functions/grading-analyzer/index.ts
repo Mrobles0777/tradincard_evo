@@ -4,6 +4,11 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent";
 
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+};
+
 const PSA_PROMPT = (cardType: string) => `
 Eres un experto certificado en grading de cartas coleccionables bajo el sistema PSA.
 Analiza esta imagen de una carta de ${cardType} y evalúa con precisión los 4 criterios PSA:
@@ -43,10 +48,22 @@ Responde SOLO en este JSON sin texto adicional:
 `;
 
 serve(async (req) => {
+  // Handle CORS preflight
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { headers: corsHeaders });
+  }
+
   try {
     const { imageBase64, cardType, evaluationId } = await req.json();
+    console.log(`Analizando carta ${cardType} para evaluación ${evaluationId}...`);
 
-    const response = await fetch(`${GEMINI_URL}?key=${Deno.env.get("GEMINI_API_KEY")}`, {
+    const apiKey = Deno.env.get("GEMINI_API_KEY");
+    if (!apiKey) {
+      console.error("GEMINI_API_KEY no configurado en Supabase Secrets");
+      throw new Error("Configuración incompleta: GEMINI_API_KEY falante");
+    }
+
+    const response = await fetch(`${GEMINI_URL}?key=${apiKey}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -60,21 +77,28 @@ serve(async (req) => {
       })
     });
 
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`Error de Gemini API: ${response.status} - ${errorText}`);
+      throw new Error(`Gemini API falló con estado ${response.status}`);
+    }
+
     const geminiData = await response.json();
     
     if (!geminiData.candidates || geminiData.candidates.length === 0) {
-      throw new Error("No response from Gemini API");
+      throw new Error("No hubo candidatos de respuesta en Gemini API");
     }
 
     const text = geminiData.candidates[0].content.parts[0].text;
     const jsonMatch = text.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
-      throw new Error("Invalid response format from Gemini");
+      console.error("Respuesta no válida de AI:", text);
+      throw new Error("El modelo no devolvió un formato JSON válido");
     }
     
     const analysis = JSON.parse(jsonMatch[0]);
 
-    // Calcular grade ponderado (PSA usa el peor criterio como limitante)
+    // Calcular grade ponderado
     const scores = [
       analysis.centering.score, 
       analysis.corners.score,
@@ -83,12 +107,8 @@ serve(async (req) => {
     ];
     const minScore = Math.min(...scores);
     const avgScore = scores.reduce((a: number, b: number) => a + b) / 4;
-    
-    // PSA Grading strategy: usually the final grade is capped by the lowest sub-score
-    // with some small "mercy" factor if other scores are high, but usually minScore is key.
     const finalGrade = Math.min(minScore + 0.5, avgScore).toFixed(1);
 
-    // Actualizar evaluación en Supabase
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
@@ -109,15 +129,19 @@ serve(async (req) => {
       updated_at:         new Date().toISOString()
     }).eq("id", evaluationId);
 
-    if (updateError) throw updateError;
+    if (updateError) {
+      console.error("Error actualizando DB:", updateError);
+      throw updateError;
+    }
 
     return new Response(JSON.stringify({ ...analysis, final_grade: finalGrade }), {
-      headers: { "Content-Type": "application/json" }
+      headers: { ...corsHeaders, "Content-Type": "application/json" }
     });
-  } catch (error) {
+  } catch (error: any) {
+    console.error("Error en Edge Function:", error.message);
     return new Response(JSON.stringify({ error: error.message }), {
-      status: 500,
-      headers: { "Content-Type": "application/json" }
+      status: 200, // Devolver 200 pero con el objeto error para que el frontend lo maneje mejor si es posible, o seguir con 500
+      headers: { ...corsHeaders, "Content-Type": "application/json" }
     });
   }
 });
