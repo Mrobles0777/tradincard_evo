@@ -2,8 +2,8 @@
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-// Usamos el endpoint v1 estable que es el recomendado actualmente para gemini-1.5-flash
-const GEMINI_URL = "https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent";
+// Usamos pro en v1beta que es el más compatible para multimodal en todas las regiones
+const GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent";
 
 const PSA_PROMPT = (cardType: string) => `
 Eres un experto certificado en grading de cartas coleccionables bajo el sistema PSA.
@@ -43,14 +43,16 @@ serve(async (req) => {
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
-    if (!geminiKey) throw new Error("GEMINI_API_KEY no está configurada en Supabase.");
+    if (!geminiKey) throw new Error("GEMINI_API_KEY no encontrada en secrets.");
+
+    // Log de seguridad solo del prefijo
+    console.log(`[CONFIG] Key prefix: ${geminiKey.substring(0, 5)}..., URL: ${supabaseUrl}`);
 
     const { imageBase64, cardType, evaluationId } = await req.json();
-    console.log(`[REQ] Evaluando id: ${evaluationId}, tipo: ${cardType}`);
+    console.log(`[REQ] ID: ${evaluationId}, Tipo: ${cardType}`);
 
-    if (!imageBase64) throw new Error("No se recibió la imagen en Base64.");
+    if (!imageBase64) throw new Error("No hay imagen.");
 
-    // Llamada a Gemini
     const response = await fetch(`${GEMINI_URL}?key=${geminiKey}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -69,9 +71,8 @@ serve(async (req) => {
 
     if (!response.ok) {
       console.error("[GEMINI ERROR]", JSON.stringify(result));
-      // Devolvemos el error de Gemini tal cual para diagnosticar en el navegador
       return new Response(JSON.stringify({ 
-        error: "Error de la API de Gemini", 
+        error: "Google API Error", 
         details: result.error || result 
       }), {
         status: 500,
@@ -80,14 +81,14 @@ serve(async (req) => {
     }
 
     const text = result.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!text) throw new Error("Gemini no generó ningún texto. Posible bloqueo de contenido.");
+    if (!text) throw new Error("Respuesta vacía de Gemini.");
 
     const jsonMatch = text.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) throw new Error("La IA no devolvió un JSON válido.");
+    if (!jsonMatch) throw new Error("Respuesta no es JSON.");
     
     const analysis = JSON.parse(jsonMatch[0]);
     const scores = [analysis.centering.score, analysis.corners.score, analysis.edges.score, analysis.surface.score];
-    const finalGrade = Math.min(...scores).toFixed(1); // Simplificado para estabilidad
+    const finalGrade = Math.min(...scores).toFixed(1);
 
     const supabase = createClient(supabaseUrl!, supabaseKey!);
     const { error: dbError } = await supabase.from("evaluations").update({
@@ -98,10 +99,10 @@ serve(async (req) => {
       centering_front_lr: analysis.centering.front_lr,
       centering_front_tb: analysis.centering.front_tb,
       psa_grade: parseFloat(finalGrade),
-      psa_label: analysis.psa_label || "Evaluated",
-      psa_qualifier: analysis.qualifier || "NONE",
+      psa_label: analysis.psa_label,
+      psa_qualifier: analysis.qualifier,
       ai_analysis: analysis,
-      confidence_pct: analysis.confidence || 0,
+      confidence_pct: analysis.confidence,
     }).eq("id", evaluationId);
 
     if (dbError) throw dbError;
