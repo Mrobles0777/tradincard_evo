@@ -52,8 +52,6 @@ serve(async (req) => {
     'Access-Control-Max-Age': '86400',
   };
 
-  console.log(`[HTTP] ${req.method} | Origin: ${origin} | UA: ${req.headers.get('user-agent')}`);
-
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }
@@ -64,29 +62,15 @@ serve(async (req) => {
     const geminiKey = Deno.env.get("GEMINI_API_KEY");
 
     if (!supabaseUrl || !supabaseKey || !geminiKey) {
-      console.error("[ENV ERROR] Missing required variables");
-      throw new Error("Missing environment configuration");
+      throw new Error("Missing server configuration (URL/Keys)");
     }
 
-    // Leer el body de forma segura
-    let body;
-    try {
-      body = await req.json();
-    } catch (e: any) {
-      console.error("[BODY ERROR] Fail to parse JSON:", e.message);
-      throw new Error("Invalid JSON payload");
-    }
+    const { imageBase64, cardType, evaluationId } = await req.json();
+    console.log(`[REQ] Processing evaluation ${evaluationId} (${cardType})`);
 
-    const { imageBase64, cardType, evaluationId } = body;
-    const imgSize = imageBase64 ? Math.round(imageBase64.length / 1024) : 0;
-    console.log(`[REQ] Data: type=${cardType}, id=${evaluationId}, size=${imgSize}KB`);
+    if (!imageBase64) throw new Error("No image data provided");
 
-    if (!imageBase64 || imageBase64.length < 10) {
-      throw new Error("No image data provided");
-    }
-
-    // Call Gemini
-    console.log("[GEMINI] Calling API...");
+    // Gemini API Request
     const genResponse = await fetch(`${GEMINI_URL}?key=${geminiKey}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -102,31 +86,24 @@ serve(async (req) => {
     });
 
     if (!genResponse.ok) {
-      const errorText = await genResponse.text();
-      console.error(`[GEMINI ERROR] Status ${genResponse.status}: ${errorText}`);
+      const errorData = await genResponse.json();
+      console.error("[GEMINI ERROR]", errorData);
       throw new Error(`Gemini API error: ${genResponse.status}`);
     }
 
     const geminiData = await genResponse.json();
     const textResult = geminiData.candidates?.[0]?.content?.parts?.[0]?.text;
     
-    if (!textResult) {
-      throw new Error("No candidates received from Gemini");
-    }
+    if (!textResult) throw new Error("Gemini returned an empty response");
 
     const jsonMatch = textResult.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-      console.error("[AI FORMAT ERROR]", textResult);
-      throw new Error("AI response did not contain valid JSON");
-    }
+    if (!jsonMatch) throw new Error("AI did not return a valid JSON format");
     
     const analysis = JSON.parse(jsonMatch[0]);
-
-    // Scores PSA
     const scores = [analysis.centering.score, analysis.corners.score, analysis.edges.score, analysis.surface.score];
     const finalGrade = Math.min(Math.min(...scores) + 0.5, scores.reduce((a, b) => a + b) / 4).toFixed(1);
 
-    // Save to DB
+    // Update Project Database
     const supabase = createClient(supabaseUrl, supabaseKey);
     const { error: dbError } = await supabase.from("evaluations").update({
       score_centering: analysis.centering.score,
@@ -143,21 +120,16 @@ serve(async (req) => {
       updated_at: new Date().toISOString()
     }).eq("id", evaluationId);
 
-    if (dbError) {
-      console.error("[DB ERROR]", dbError);
-      throw dbError;
-    }
+    if (dbError) throw dbError;
 
-    console.log("[SUCCESS] Analysis complete");
     return new Response(JSON.stringify({ ...analysis, final_grade: finalGrade }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" }
     });
 
   } catch (error: any) {
-    console.error(`[FATAL] ${error.message}`);
-    const errorBody = JSON.stringify({ error: error.message });
-    return new Response(errorBody, {
-      status: 400, // Usar 400 para errores de cliente/logica
+    console.error(`[EXECUTION ERROR] ${error.message}`);
+    return new Response(JSON.stringify({ error: error.message }), {
+      status: 200, // Return 200 with error object so the frontend can catch the message easily
       headers: { ...corsHeaders, "Content-Type": "application/json" }
     });
   }
