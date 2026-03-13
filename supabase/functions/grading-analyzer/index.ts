@@ -2,7 +2,8 @@
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const GEMINI_URL = "https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent";
+// v1beta is more flexible for flash models with inline_data
+const GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent";
 
 const PSA_PROMPT = (cardType: string) => `
 Eres un experto certificado en grading de cartas coleccionables bajo el sistema PSA.
@@ -61,8 +62,10 @@ serve(async (req) => {
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
     const geminiKey = Deno.env.get("GEMINI_API_KEY");
 
+    console.log(`[AUTH CHECK] Key present: ${!!geminiKey}, URL: ${supabaseUrl}`);
+
     if (!supabaseUrl || !supabaseKey || !geminiKey) {
-      throw new Error("Missing server configuration (URL/Keys)");
+      throw new Error("Missing server configuration (URL/Keys). Ensure GEMINI_API_KEY is set in Supabase secrets.");
     }
 
     const { imageBase64, cardType, evaluationId } = await req.json();
@@ -87,7 +90,7 @@ serve(async (req) => {
 
     if (!genResponse.ok) {
       const errorData = await genResponse.json();
-      console.error("[GEMINI ERROR]", errorData);
+      console.error("[GEMINI ERROR]", JSON.stringify(errorData));
       throw new Error(`Gemini API error: ${genResponse.status}`);
     }
 
