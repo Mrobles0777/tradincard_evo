@@ -2,56 +2,44 @@
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-// Usamos pro en v1beta que es el más compatible para multimodal en todas las regiones
-const GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent";
+// v1beta con gemini-1.5-flash es la combinación más estable para multimodal
+const GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent";
 
 const PSA_PROMPT = (cardType: string) => `
-Eres un experto certificado en grading de cartas coleccionables bajo el sistema PSA.
-Analiza esta imagen de una carta de ${cardType} y evalúa con precisión los 4 criterios PSA:
-1. CENTRADO (centering)
-2. ESQUINAS (corners)
-3. BORDES (edges)
-4. SUPERFICIE (surface)
-
-Responde SOLO en este formato JSON:
+Eres un experto en grading PSA. Analiza esta carta de ${cardType} y devuelve un JSON con scores (0-10) para: centering, corners, edges, surface. Incluye psa_grade final.
+Formato JSON estricto:
 {
-  "centering": { "score": 0.0, "front_lr": "50/50", "front_tb": "50/50", "detail": "" },
-  "corners": { "score": 0.0, "detail": "" },
-  "edges": { "score": 0.0, "detail": "" },
-  "surface": { "score": 0.0, "detail": "" },
-  "psa_grade": 0.0,
+  "centering": { "score": 0, "front_lr": "50/50", "front_tb": "50/50", "detail": "" },
+  "corners": { "score": 0, "detail": "" },
+  "edges": { "score": 0, "detail": "" },
+  "surface": { "score": 0, "detail": "" },
+  "psa_grade": 0,
   "psa_label": "",
   "qualifier": "NONE",
-  "confidence": 0,
-  "summary": ""
+  "confidence": 0
 }
 `;
 
 serve(async (req) => {
-  const origin = req.headers.get('origin') || '*';
   const corsHeaders = {
-    'Access-Control-Allow-Origin': origin,
+    'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
-    'Access-Control-Allow-Credentials': 'true',
   };
 
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
   try {
-    const geminiKey = Deno.env.get("GEMINI_API_KEY");
+    const geminiKey = Deno.env.get("GEMINI_API_KEY")?.trim();
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
-    if (!geminiKey) throw new Error("GEMINI_API_KEY no encontrada en secrets.");
-
-    // Log de seguridad solo del prefijo
-    console.log(`[CONFIG] Key prefix: ${geminiKey.substring(0, 5)}..., URL: ${supabaseUrl}`);
+    if (!geminiKey) throw new Error("GEMINI_API_KEY no encontrada.");
 
     const { imageBase64, cardType, evaluationId } = await req.json();
-    console.log(`[REQ] ID: ${evaluationId}, Tipo: ${cardType}`);
+    console.log(`[REQ] ID: ${evaluationId}, Image Size: ${imageBase64?.length || 0}`);
 
-    if (!imageBase64) throw new Error("No hay imagen.");
+    if (!imageBase64) throw new Error("Imagen vacía.");
 
     const response = await fetch(`${GEMINI_URL}?key=${geminiKey}`, {
       method: "POST",
@@ -63,7 +51,7 @@ serve(async (req) => {
             { inline_data: { mime_type: "image/jpeg", data: imageBase64 } }
           ]
         }],
-        generationConfig: { temperature: 0.1, maxOutputTokens: 1000 }
+        generationConfig: { temperature: 0.1, maxOutputTokens: 800 }
       })
     });
 
@@ -71,43 +59,34 @@ serve(async (req) => {
 
     if (!response.ok) {
       console.error("[GEMINI ERROR]", JSON.stringify(result));
-      return new Response(JSON.stringify({ 
-        error: "Google API Error", 
-        details: result.error || result 
-      }), {
+      return new Response(JSON.stringify({ error: "Gemini API Error", details: result }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" }
       });
     }
 
     const text = result.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!text) throw new Error("Respuesta vacía de Gemini.");
+    if (!text) throw new Error("No se generó texto.");
 
     const jsonMatch = text.match(/\{[\s\S]*\}/);
     if (!jsonMatch) throw new Error("Respuesta no es JSON.");
     
     const analysis = JSON.parse(jsonMatch[0]);
-    const scores = [analysis.centering.score, analysis.corners.score, analysis.edges.score, analysis.surface.score];
-    const finalGrade = Math.min(...scores).toFixed(1);
-
+    
     const supabase = createClient(supabaseUrl!, supabaseKey!);
     const { error: dbError } = await supabase.from("evaluations").update({
       score_centering: analysis.centering.score,
       score_corners: analysis.corners.score,
       score_edges: analysis.edges.score,
       score_surface: analysis.surface.score,
-      centering_front_lr: analysis.centering.front_lr,
-      centering_front_tb: analysis.centering.front_tb,
-      psa_grade: parseFloat(finalGrade),
-      psa_label: analysis.psa_label,
-      psa_qualifier: analysis.qualifier,
+      psa_grade: analysis.psa_grade,
       ai_analysis: analysis,
       confidence_pct: analysis.confidence,
     }).eq("id", evaluationId);
 
     if (dbError) throw dbError;
 
-    return new Response(JSON.stringify({ success: true, analysis }), {
+    return new Response(JSON.stringify({ success: true }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" }
     });
 
