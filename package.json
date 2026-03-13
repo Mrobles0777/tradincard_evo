@@ -1,0 +1,10 @@
+{
+  "name": "tradincard-evo",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build": "npm --prefix frontend run build",
+    "start": "npm --prefix frontend start",
+    "test": "npm --prefix frontend test"
+  }
+}
