@@ -67,10 +67,37 @@ export class CameraCaptureComponent implements OnInit, OnDestroy {
       }
       
       const reader = new FileReader();
-      reader.onload = () => {
-        const result = reader.result as string;
-        this.previewUrl.set(result);
-        this.selectedBase64 = result.split(',')[1];
+      reader.onload = async () => {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          const MAX_DIM = 1200;
+          let width = img.width;
+          let height = img.height;
+
+          if (width > height) {
+            if (width > MAX_DIM) {
+              height *= MAX_DIM / width;
+              width = MAX_DIM;
+            }
+          } else {
+            if (height > MAX_DIM) {
+              width *= MAX_DIM / height;
+              height = MAX_DIM;
+            }
+          }
+
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.drawImage(img, 0, 0, width, height);
+            const compressed = canvas.toDataURL('image/jpeg', 0.8);
+            this.previewUrl.set(compressed);
+            this.selectedBase64 = compressed.split(',')[1];
+          }
+        };
+        img.src = reader.result as string;
       };
       reader.readAsDataURL(file);
     }
