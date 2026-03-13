@@ -1,0 +1,14 @@
+project_id = "rsjmnioucczyzwhiyyqu"
+
+[api]
+port = 54321
+schemas = ["public", "graphql_public"]
+
+[db]
+port = 54322
+
+[storage]
+enabled = true
+
+[auth]
+enabled = true
