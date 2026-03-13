@@ -7,6 +7,7 @@ const GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemi
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
 const PSA_PROMPT = (cardType: string) => `
@@ -48,13 +49,16 @@ Responde SOLO en este JSON sin texto adicional:
 `;
 
 serve(async (req) => {
+  console.log(`${req.method} request received at ${new Date().toISOString()}`);
+
   // Handle CORS preflight
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }
 
   try {
-    const { imageBase64, cardType, evaluationId } = await req.json();
+    const body = await req.json();
+    const { imageBase64, cardType, evaluationId } = body;
     console.log(`Analizando carta ${cardType} para evaluación ${evaluationId}...`);
 
     const apiKey = Deno.env.get("GEMINI_API_KEY");
@@ -140,7 +144,7 @@ serve(async (req) => {
   } catch (error: any) {
     console.error("Error en Edge Function:", error.message);
     return new Response(JSON.stringify({ error: error.message }), {
-      status: 200, // Devolver 200 pero con el objeto error para que el frontend lo maneje mejor si es posible, o seguir con 500
+      status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" }
     });
   }
