@@ -60,13 +60,22 @@ export class CameraCaptureComponent implements OnInit, OnDestroy {
       // 2. Upload image to Storage (using evaluation ID as filename)
       const fileName = `${evaluation.user_id}/${evaluation.id}_front.jpg`;
       const blob = await (await fetch(`data:image/jpeg;base64,${base64Image}`)).blob();
-      await this.supabaseService.uploadImage(fileName, blob);
-
-      // 3. Update evaluation with path
-      // Note: In a real app, you'd do this properly. Here we just update the path.
       
-      // 4. Run AI Analysis
-      const result = await this.gradingService.analyzeCard(base64Image, this.cardType(), evaluation.id);
+      // Asegurar que usamos el bucket correcto 'card-images'
+      const { error: uploadError } = await this.supabaseService.uploadImage(fileName, blob);
+      if (uploadError) throw uploadError;
+
+      // 3. Update evaluation with the correct storage path
+      await this.supabaseService.client
+        .from('evaluations')
+        .update({ front_image_path: fileName })
+        .eq('id', evaluation.id);
+      
+      // 4. Run AI Analysis (Wait for it to finish)
+      await this.gradingService.analyzeCard(base64Image, this.cardType(), evaluation.id);
+      
+      // Pequeña pausa para asegurar que los triggers y actualizaciones de DB en la Edge Function se propaguen
+      await new Promise(resolve => setTimeout(resolve, 1500));
       
       this.router.navigate(['/grading', evaluation.id]);
     } catch (err: any) {

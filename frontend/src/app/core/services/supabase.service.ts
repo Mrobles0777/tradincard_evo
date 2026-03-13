@@ -37,12 +37,14 @@ export class SupabaseService {
   }
 
   // Helper to get public URL of an image
-  getPublicUrl(path: string, bucket: string = 'card-images') {
-    return this.supabase.storage.from(bucket).getPublicUrl(path).data.publicUrl;
+  getPublicUrl(path: string) {
+    return this.supabase.storage.from('card-images').getPublicUrl(path).data.publicUrl;
   }
 
-  // Upload image to storage
-  async uploadImage(path: string, file: File | Blob) {
-    return await this.supabase.storage.from('card-images').upload(path, file);
+  async uploadImage(path: string, file: Blob) {
+    return await this.supabase.storage.from('card-images').upload(path, file, {
+      contentType: 'image/jpeg',
+      upsert: true
+    });
   }
 }
