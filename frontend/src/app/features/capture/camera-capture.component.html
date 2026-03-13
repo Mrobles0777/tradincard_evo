@@ -1,46 +1,45 @@
 <div class="camera-container">
   
-  <!-- Upload Mode -->
-  <div class="upload-area glass" *ngIf="method() === 'upload'" [class.analyzing]="isAnalyzing()">
-    <div class="upload-content" *ngIf="!previewUrl()">
-      <div class="icon">📁</div>
-      <h2>Cargar Carta</h2>
-      <p>Selecciona una foto clara del frente de tu carta</p>
-      <input type="file" id="fileInput" (change)="onFileSelected($event)" accept="image/*" class="file-input">
-      <label for="fileInput" class="upload-btn primary">Seleccionar Archivo</label>
-    </div>
-
-    <div class="preview-content" *ngIf="previewUrl()">
-      <div class="preview-wrapper">
-        <img [src]="previewUrl()" alt="Vista previa" class="preview-img">
-        <div class="preview-overlay" *ngIf="isAnalyzing()">
-          <div class="scanning-line"></div>
+  <div class="viewport">
+    <!-- Camera Mode Viewport -->
+    <div class="camera-stream" *ngIf="method() === 'camera'">
+      <video #videoElement autoplay playsinline muted></video>
+      <div class="overlay">
+        <div class="card-guide" [class.analyzing]="isAnalyzing()">
+          <div class="corner tl"></div><div class="corner tr"></div>
+          <div class="corner bl"></div><div class="corner br"></div>
+          <div class="scanning-line" *ngIf="isAnalyzing()"></div>
         </div>
       </div>
-      <button class="change-file" (click)="previewUrl.set(null); selectedBase64 = null" *ngIf="!isAnalyzing()">Cambiar Imagen</button>
+      
+      <button class="mode-switch-btn floating-top" (click)="setMethod('upload')" *ngIf="!isAnalyzing()">
+        📁
+      </button>
     </div>
 
-    <button class="switch-method" (click)="setMethod('camera')" *ngIf="!isAnalyzing()">
-      📷 Usar Cámara en Vivo
-    </button>
-  </div>
+    <!-- Upload Mode Viewport -->
+    <div class="upload-area" *ngIf="method() === 'upload'">
+      <div class="upload-content" *ngIf="!previewUrl()">
+        <div class="icon">📁</div>
+        <h2>Cargar Carta</h2>
+        <p>Selecciona una foto clara del frente de tu carta</p>
+        <input type="file" id="fileInput" (change)="onFileSelected($event)" accept="image/*" class="file-input">
+        <label for="fileInput" class="upload-btn">Seleccionar Archivo</label>
+      </div>
 
-  <!-- Camera Mode -->
-  <div class="camera-stream" *ngIf="method() === 'camera'">
-    <video #videoElement autoplay playsinline muted></video>
-    
-    <div class="overlay">
-      <div class="card-guide" [class.analyzing]="isAnalyzing()">
-        <div class="corner tl"></div><div class="corner tr"></div>
-        <div class="corner bl"></div><div class="corner br"></div>
+      <div class="preview-content" *ngIf="previewUrl()">
+        <div class="preview-wrapper">
+          <img [src]="previewUrl()" alt="Vista previa" class="preview-img">
+          <div class="scanning-line" *ngIf="isAnalyzing()"></div>
+        </div>
+        <button class="change-file" (click)="previewUrl.set(null); selectedBase64 = null" *ngIf="!isAnalyzing()">
+          Cambiar Imagen
+        </button>
       </div>
     </div>
-
-    <button class="switch-method top" (click)="setMethod('upload')" *ngIf="!isAnalyzing()">
-      📁 Volver a Cargar Archivo
-    </button>
   </div>
 
+  <!-- Bottom Controls -->
   <div class="controls">
     <div class="type-selector" *ngIf="!isAnalyzing()">
       <button [class.active]="cardType() === 'pokemon'" (click)="setCardType('pokemon')">Pokémon</button>
@@ -48,16 +47,23 @@
       <button [class.active]="cardType() === 'football'" (click)="setCardType('football')">Football</button>
     </div>
 
-    <button class="capture-btn" (click)="capture()" [disabled]="isAnalyzing() || (method() === 'upload' && !selectedBase64)">
-      <div *ngIf="!isAnalyzing()" class="btn-content">
-        <span class="btn-icon">{{ method() === 'upload' ? '🔍' : '📸' }}</span>
-        <span>{{ method() === 'upload' ? 'Analizar Carta Seleccionada' : 'Capturar y Analizar Carta' }}</span>
-      </div>
-      <div *ngIf="isAnalyzing()" class="analysis-state">
-        <span class="loader"></span>
-        <span>Analizando...</span>
-      </div>
-    </button>
+    <div class="actions">
+      <!-- Only show switch here if in upload mode to keep it balanced -->
+      <button class="mode-switch-btn" (click)="setMethod('camera')" *ngIf="method() === 'upload' && !isAnalyzing()">
+        📷
+      </button>
+
+      <button class="capture-btn" (click)="capture()" [disabled]="isAnalyzing() || (method() === 'upload' && !selectedBase64)">
+        <div *ngIf="!isAnalyzing()" class="btn-content">
+          <span class="btn-icon">{{ method() === 'upload' ? '🔍' : '📸' }}</span>
+          <span>{{ method() === 'upload' ? 'Analizar Carta' : 'Capturar y Analizar' }}</span>
+        </div>
+        <div *ngIf="isAnalyzing()" class="analysis-state">
+          <span class="loader"></span>
+          <span>Analizando...</span>
+        </div>
+      </button>
+    </div>
   </div>
 
   <div class="error-toast" *ngIf="error()">
