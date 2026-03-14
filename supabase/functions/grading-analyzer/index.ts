@@ -84,6 +84,12 @@ serve(async (req) => {
       return new Response(JSON.stringify({ error: "Error de formato JSON.", raw_text: jsonMatch[0] }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
     
+    let confidenceVal = analysis.confidence || 0;
+    if (confidenceVal <= 1 && confidenceVal > 0) {
+      confidenceVal = confidenceVal * 100; // Convert 0.95 to 95
+    }
+    confidenceVal = Math.round(confidenceVal);
+
     const supabase = createClient(supabaseUrl!, supabaseKey!);
     const { error: dbError } = await supabase.from("evaluations").update({
       score_centering: analysis.centering?.score || 0,
@@ -92,7 +98,7 @@ serve(async (req) => {
       score_surface: analysis.surface?.score || 0,
       psa_grade: analysis.psa_grade || 0,
       ai_analysis: analysis,
-      confidence_pct: analysis.confidence || 0,
+      confidence_pct: confidenceVal,
     }).eq("id", evaluationId);
 
     if (dbError) {
