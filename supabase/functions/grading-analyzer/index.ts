@@ -1,3 +1,4 @@
+import { serve } from "https://deno.land/std@0.160.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
@@ -23,9 +24,9 @@ IMPORTANTE: El valor de "psa_grade" debe ser un número entre 1.0 y 10.0 (nunca 
   "summary": "Resumen general de la evaluación en español..."
 }`;
 
-Deno.serve(async (req) => {
+serve(async (req) => {
   if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders });
+    return new Response('ok', { status: 200, headers: corsHeaders });
   }
 
   try {
@@ -33,20 +34,18 @@ Deno.serve(async (req) => {
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
-    if (!geminiKey) throw new Error("Falta GEMINI_API_KEY en los secretos de Supabase.");
-    if (!supabaseUrl || !supabaseKey) throw new Error("Faltan credenciales de Supabase en el entorno.");
+    if (!geminiKey) throw new Error("Falta GEMINI_API_KEY.");
+    if (!supabaseUrl || !supabaseKey) throw new Error("Faltan logs de Supabase.");
 
     const body = await req.json().catch(() => ({}));
     const { imageBase64, cardType, evaluationId } = body;
 
-    if (!imageBase64) throw new Error("No se recibió la imagen (imageBase64).");
-    if (!evaluationId) throw new Error("Falta el ID de evaluación (evaluationId).");
+    if (!imageBase64 || !evaluationId) throw new Error("Faltan datos de entrada.");
 
     const base64Data = imageBase64.includes(',') ? imageBase64.split(',')[1] : imageBase64;
     
-    console.log(`[LOG] Iniciando análisis Gemini para eval: ${evaluationId}`);
-
-    const genUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${geminiKey}`;
+    // Usamos v1beta y el modelo gemini-1.5-flash para máxima compatibilidad estable durante el debug
+    const genUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiKey}`;
     
     const geminiRes = await fetch(genUrl, {
       method: "POST",
@@ -64,12 +63,12 @@ Deno.serve(async (req) => {
 
     if (!geminiRes.ok) {
       const err = await geminiRes.json();
-      throw new Error(`Google AI Error: ${err.error?.message || 'Error desconocido'}`);
+      throw new Error(`Google AI: ${err.error?.message || 'Error desconocido'}`);
     }
 
     const { candidates } = await geminiRes.json();
     const aiText = candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!aiText) throw new Error("La IA no devolvió resultados (bloqueado o vacío).");
+    if (!aiText) throw new Error("Sin respuesta de IA.");
 
     const analysis = JSON.parse(aiText);
     const scoreVal = (val: any) => parseFloat(val) || 0;
@@ -86,14 +85,15 @@ Deno.serve(async (req) => {
       confidence_pct: Math.round((analysis.confidence || 0) * 100) || 50,
     }).eq("id", evaluationId);
 
-    if (dbError) throw new Error(`Error DB: ${dbError.message}`);
+    if (dbError) throw new Error(`DB Error: ${dbError.message}`);
 
     return new Response(JSON.stringify({ success: true, analysis }), {
+      status: 200,
       headers: { ...corsHeaders, "Content-Type": "application/json" }
     });
 
   } catch (err: any) {
-    console.error("[CRITICAL]", err.message);
+    console.error("[ERROR]", err.message);
     return new Response(JSON.stringify({ error: err.message }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" }
