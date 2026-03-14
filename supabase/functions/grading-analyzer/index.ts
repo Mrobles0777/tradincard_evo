@@ -1,9 +1,7 @@
 // supabase/functions/grading-analyzer/index.ts
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-
-// Usamos el modelo más reciente 'gemini-2.5-flash' o 'gemini-2.0-flash'
-const GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
+import { GoogleGenAI } from "npm:@google/genai";
 
 const PSA_PROMPT = (cardType: string) => `Analiza pacientemente esta imagen de una carta de ${cardType} para grading PSA. Devuelve estrictamente este JSON y nada más:
 {"centering":{"score":0,"front_lr":"50/50","front_tb":"50/50","detail":"..."},"corners":{"score":0,"detail":"..."},"edges":{"score":0,"detail":"..."},"surface":{"score":0,"detail":"..."},"psa_grade":0,"psa_label":"...","qualifier":"NONE","confidence":0}`;
@@ -33,33 +31,38 @@ serve(async (req) => {
       return new Response(JSON.stringify({ error: "No se recibió ninguna imagen." }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
-    const response = await fetch(`${GEMINI_URL}?key=${geminiKey}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents: [{
-          parts: [
-            { text: PSA_PROMPT(cardType) },
-            { inline_data: { mime_type: "image/jpeg", data: imageBase64 } }
-          ]
-        }],
-        generationConfig: { 
-          temperature: 0.1, 
-          maxOutputTokens: 2048,
-          responseMimeType: "application/json" 
+    const ai = new GoogleGenAI({ apiKey: geminiKey });
+    let text = "";
+
+    try {
+      const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: [
+          {
+            role: 'user',
+            parts: [
+              {
+                inlineData: {
+                  data: imageBase64,
+                  mimeType: 'image/jpeg'
+                }
+              },
+              { text: PSA_PROMPT(cardType) }
+            ]
+          }
+        ],
+        config: {
+          temperature: 0.1,
+          responseMimeType: "application/json",
         }
-      })
-    });
-
-    const result = await response.json();
-
-    if (!response.ok) {
-      console.error("[GEMINI ERROR]", JSON.stringify(result));
-      const errMsg = result.error?.message || "Error desconocido de Gemini API";
-      return new Response(JSON.stringify({ error: `IA Google Rechazó: ${errMsg}` }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      });
+      
+      text = response.text || "";
+    } catch (genErr: any) {
+      console.error("[GEMINI SDK ERROR]", genErr);
+      return new Response(JSON.stringify({ error: `IA Google Rechazó: ${genErr.message}` }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
-    let text = result.candidates?.[0]?.content?.parts?.[0]?.text;
     if (!text) {
        return new Response(JSON.stringify({ error: "La IA no pudo procesar la imagen (respuesta vacía)." }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
