@@ -78,14 +78,20 @@ serve(async (req) => {
     }
 
     // Limpiar bloques de código markdown si la IA los incluyó a pesar de la instrucción
-    text = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+    text = text.replace(/```json\n?/gi, '').replace(/```\n?/g, '').trim();
+
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+       console.error("[NO JSON BLOCK]", text);
+       return new Response(JSON.stringify({ error: "La IA no devolvió un formato JSON válido.", raw_text: text }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
 
     let analysis;
     try {
-      analysis = JSON.parse(text);
+      analysis = JSON.parse(jsonMatch[0]);
     } catch (e) {
-      console.error("[PARSE ERROR] Falló parseo de:", text);
-      return new Response(JSON.stringify({ error: "La IA no devolvió un formato JSON válido.", raw_text: text }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      console.error("[PARSE ERROR] Falló parseo de:", jsonMatch[0]);
+      return new Response(JSON.stringify({ error: "Error de formato JSON.", raw_text: jsonMatch[0] }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
     
     const supabase = createClient(supabaseUrl!, supabaseKey!);
