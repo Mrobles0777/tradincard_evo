@@ -1,5 +1,11 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+};
+
 const PSA_PROMPT = (cardType: string) => `Analiza pacientemente esta imagen de una carta de ${cardType} para grading PSA. 
 REGLA CRÍTICA DE NOTA: Si la carta presenta CUALQUIER tipo de arruga, quiebre, doblez o daño estructural (creases/wrinkles), la nota final (psa_grade) NO PUEDE SER MAYOR A 5.0, sin importar qué tan perfecta esté el resto de la carta.
 
@@ -17,130 +23,77 @@ IMPORTANTE: El valor de "psa_grade" debe ser un número entre 1.0 y 10.0 (nunca 
   "summary": "Resumen general de la evaluación en español..."
 }`;
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Max-Age': '86400',
-};
-
 Deno.serve(async (req) => {
-  // CORS Preflight
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }
 
   try {
-    console.log("[LOG] --- INICIO DE PETICIÓN ---");
-    
-    // 1. Verificar variables de entorno
     const geminiKey = Deno.env.get("GEMINI_API_KEY")?.trim();
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
-    if (!geminiKey || !supabaseUrl || !supabaseKey) {
-      console.error("[LOG] Error: Faltan secretos en Supabase (GEMINI_API_KEY, SUPABASE_URL o SUPABASE_SERVICE_ROLE_KEY)");
-      throw new Error("Configuración incompleta en el servidor.");
-    }
+    if (!geminiKey) throw new Error("Falta GEMINI_API_KEY en los secretos de Supabase.");
+    if (!supabaseUrl || !supabaseKey) throw new Error("Faltan credenciales de Supabase en el entorno.");
 
-    // 2. Parsear el body manualmente para capturar errores
-    const jsonText = await req.text();
-    console.log(`[LOG] Tamaño del body recibido: ${Math.round(jsonText.length / 1024)} KB`);
-    
-    let body;
-    try {
-      body = JSON.parse(jsonText);
-    } catch (e) {
-      console.error("[LOG] Error parseando JSON:", e.message);
-      throw new Error("El cuerpo de la petición no es un JSON válido.");
-    }
-
+    const body = await req.json().catch(() => ({}));
     const { imageBase64, cardType, evaluationId } = body;
-    if (!imageBase64 || !evaluationId) {
-      console.error("[LOG] Error: faltan campos obligatorios");
-      throw new Error("Faltan datos requeridos (imagen o ID de evaluación).");
-    }
 
-    // 3. Limpiar base64 y detectar tipo
-    let mimeType = 'image/jpeg';
-    let base64Data = imageBase64;
-    if (imageBase64.includes(';base64,')) {
-      const parts = imageBase64.split(';base64,');
-      mimeType = parts[0].split(':')[1] || 'image/jpeg';
-      base64Data = parts[1];
-    }
+    if (!imageBase64) throw new Error("No se recibió la imagen (imageBase64).");
+    if (!evaluationId) throw new Error("Falta el ID de evaluación (evaluationId).");
 
-    // 4. Llamar a Gemini API (v1beta para mayor compatibilidad con responseMimeType: json)
-    console.log(`[LOG] Solicitando análisis a Gemini (gemini-1.5-flash)...`);
+    const base64Data = imageBase64.includes(',') ? imageBase64.split(',')[1] : imageBase64;
+    
+    console.log(`[LOG] Iniciando análisis Gemini para eval: ${evaluationId}`);
+
     const genUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiKey}`;
     
-    const geminiResponse = await fetch(genUrl, {
+    const geminiRes = await fetch(genUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         contents: [{
           parts: [
-            { inlineData: { mimeType, data: base64Data } },
-            { text: PSA_PROMPT(cardType) }
+            { inlineData: { mimeType: "image/jpeg", data: base64Data } },
+            { text: PSA_PROMPT(cardType || 'pokemon') }
           ]
         }],
-        generationConfig: {
-          responseMimeType: "application/json",
-          temperature: 0.1
-        },
-        safetySettings: [
-          { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
-          { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
-          { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
-          { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" }
-        ]
+        generationConfig: { responseMimeType: "application/json", temperature: 0.1 }
       })
     });
 
-    if (!geminiResponse.ok) {
-      const errorJson = await geminiResponse.json();
-      console.error("[LOG] Error de Google API:", JSON.stringify(errorJson));
-      throw new Error(`Google API respondió: ${errorJson.error?.message || 'Error desconocido'}`);
+    if (!geminiRes.ok) {
+      const err = await geminiRes.json();
+      throw new Error(`Google AI Error: ${err.error?.message || 'Error desconocido'}`);
     }
 
-    const geminiResult = await geminiResponse.json();
-    const aiText = geminiResult.candidates?.[0]?.content?.parts?.[0]?.text;
-    
-    if (!aiText) {
-      console.error("[LOG] Respuesta de IA vacía o bloqueada:", JSON.stringify(geminiResult));
-      throw new Error("La IA no devolvió un análisis. Es posible que el contenido haya sido bloqueado o la imagen sea demasiado borrosa.");
-    }
+    const { candidates } = await geminiRes.json();
+    const aiText = candidates?.[0]?.content?.parts?.[0]?.text;
+    if (!aiText) throw new Error("La IA no devolvió resultados (bloqueado o vacío).");
 
-    console.log("[LOG] Análisis recibido exitosamente.");
-    
-    // 5. Procesar y Guardar en DB
     const analysis = JSON.parse(aiText);
-    let confidenceVal = Math.round((analysis.confidence || 0) <= 1 ? (analysis.confidence || 0) * 100 : (analysis.confidence || 0));
+    const scoreVal = (val: any) => parseFloat(val) || 0;
 
     const supabase = createClient(supabaseUrl, supabaseKey);
     const { error: dbError } = await supabase.from("evaluations").update({
-      score_centering: analysis.centering?.score || 0,
-      score_corners: analysis.corners?.score || 0,
-      score_edges: analysis.edges?.score || 0,
-      score_surface: analysis.surface?.score || 0,
-      psa_grade: analysis.psa_grade || 1,
+      score_centering: scoreVal(analysis.centering?.score),
+      score_corners: scoreVal(analysis.corners?.score),
+      score_edges: scoreVal(analysis.edges?.score),
+      score_surface: scoreVal(analysis.surface?.score),
+      psa_grade: scoreVal(analysis.psa_grade) || 1,
       psa_label: analysis.psa_label || "",
       ai_analysis: analysis,
-      confidence_pct: confidenceVal,
+      confidence_pct: Math.round((analysis.confidence || 0) * 100) || 50,
     }).eq("id", evaluationId);
 
-    if (dbError) {
-      console.error("[LOG] Error al actualizar base de datos:", dbError);
-      throw new Error(`Error de base de datos: ${dbError.message}`);
-    }
+    if (dbError) throw new Error(`Error DB: ${dbError.message}`);
 
-    console.log("[LOG] --- FIN DE PETICIÓN EXITOSA ---");
     return new Response(JSON.stringify({ success: true, analysis }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" }
     });
 
   } catch (err: any) {
-    console.error("[LOG] CRITICAL ERROR:", err.message);
+    console.error("[CRITICAL]", err.message);
     return new Response(JSON.stringify({ error: err.message }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" }

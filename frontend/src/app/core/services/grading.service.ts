@@ -18,13 +18,14 @@ export class GradingService {
 
     if (error) {
       console.error('[INVOKE ERROR]', error);
+      // Intentar extraer el mensaje de error específico del cuerpo de la respuesta 500
+      if (error instanceof Error && (error as any).context) {
+        try {
+          const body = await (error as any).context.json();
+          if (body && body.error) throw new Error(body.error);
+        } catch (e) {}
+      }
       throw error;
-    }
-    
-    if (data && data.error) {
-      const extra = data.raw_text || data.details || "";
-      const msg = extra ? `${data.error} | RAW_DETAILS: ${typeof extra === 'object' ? JSON.stringify(extra) : extra}` : data.error;
-      throw new Error(msg);
     }
 
     return data;
