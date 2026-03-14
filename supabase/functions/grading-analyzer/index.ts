@@ -8,7 +8,7 @@ const GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemi
 const PSA_PROMPT = (cardType: string) => `
 Eres un experto en grading PSA. Analiza detalladamente esta imagen de una carta de ${cardType} y devuelve un análisis en formato JSON estricto.
 Debes evaluar los 4 criterios (centering, corners, edges, surface) con una nota de 0 a 10.
-Devuelve EXACTAMENTE este formato JSON y nada más:
+Devuelve EXACTAMENTE este formato JSON y nada más, sin bloques de código markdown:
 {
   "centering": { "score": 0, "front_lr": "50/50", "front_tb": "50/50", "detail": "..." },
   "corners": { "score": 0, "detail": "..." },
@@ -36,7 +36,6 @@ serve(async (req) => {
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
     if (!geminiKey) {
-      // Retornamos SIEMPRE código 200 para que el cliente de Supabase no bloquee el error
       return new Response(JSON.stringify({ error: "Configuración incompleta: falta GEMINI_API_KEY." }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
@@ -47,7 +46,6 @@ serve(async (req) => {
       return new Response(JSON.stringify({ error: "No se recibió ninguna imagen." }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
-    // Llamada a Gemini Pro Vision
     const response = await fetch(`${GEMINI_URL}?key=${geminiKey}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -58,7 +56,11 @@ serve(async (req) => {
             { inline_data: { mime_type: "image/jpeg", data: imageBase64 } }
           ]
         }],
-        generationConfig: { temperature: 0.1, maxOutputTokens: 800 }
+        generationConfig: { 
+          temperature: 0.1, 
+          maxOutputTokens: 800,
+          responseMimeType: "application/json" 
+        }
       })
     });
 
@@ -67,25 +69,23 @@ serve(async (req) => {
     if (!response.ok) {
       console.error("[GEMINI ERROR]", JSON.stringify(result));
       const errMsg = result.error?.message || "Error desconocido de Gemini API";
-      // Devolvemos 200 para que la UI no sufra un crash mudo y muestre el mensaje de error de Google
       return new Response(JSON.stringify({ error: `IA Google Rechazó: ${errMsg}` }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
-    const text = result.candidates?.[0]?.content?.parts?.[0]?.text;
+    let text = result.candidates?.[0]?.content?.parts?.[0]?.text;
     if (!text) {
        return new Response(JSON.stringify({ error: "La IA no pudo procesar la imagen (respuesta vacía)." }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-       return new Response(JSON.stringify({ error: "La IA no devolvió un formato JSON válido." }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
-    }
-    
+    // Limpiar bloques de código markdown si la IA los incluyó a pesar de la instrucción
+    text = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+
     let analysis;
     try {
-      analysis = JSON.parse(jsonMatch[0]);
+      analysis = JSON.parse(text);
     } catch (e) {
-      return new Response(JSON.stringify({ error: "Error parseando JSON de la IA." }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      console.error("[PARSE ERROR] Falló parseo de:", text);
+      return new Response(JSON.stringify({ error: "La IA no devolvió un formato JSON válido.", raw_text: text }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
     
     const supabase = createClient(supabaseUrl!, supabaseKey!);
@@ -110,9 +110,9 @@ serve(async (req) => {
 
   } catch (error: any) {
     console.error(`[FATAL] ${error.message}`);
-    // Siempre 200
     return new Response(JSON.stringify({ error: `Error Fatal Función: ${error.message}` }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" }
     });
   }
 });
+
