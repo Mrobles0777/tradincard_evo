@@ -3,8 +3,21 @@ import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { GoogleGenAI } from "npm:@google/genai";
 
-const PSA_PROMPT = (cardType: string) => `Analiza pacientemente esta imagen de una carta de ${cardType} para grading PSA. Devuelve estrictamente este JSON y nada más:
-{"centering":{"score":0,"front_lr":"50/50","front_tb":"50/50","detail":"..."},"corners":{"score":0,"detail":"..."},"edges":{"score":0,"detail":"..."},"surface":{"score":0,"detail":"..."},"psa_grade":0,"psa_label":"...","qualifier":"NONE","confidence":0}`;
+const PSA_PROMPT = (cardType: string) => `Analiza pacientemente esta imagen de una carta de ${cardType} para grading PSA. 
+REGLA CRÍTICA DE NOTA: Si la carta presenta CUALQUIER tipo de arruga, quiebre, doblez o daño estructural (creases/wrinkles), la nota final (psa_grade) NO PUEDE SER MAYOR A 5.0, sin importar qué tan perfecta esté el resto de la carta.
+
+Devuelve estrictamente este JSON en ESPAÑOL (todos los campos "detail", "psa_label" y "summary"):
+{
+  "centering": {"score": 0, "front_lr": "50/50", "front_tb": "50/50", "detail": "Detalle del centrado en español..."},
+  "corners": {"score": 0, "detail": "Detalle de las esquinas en español..."},
+  "edges": {"score": 0, "detail": "Detalle de los bordes en español..."},
+  "surface": {"score": 0, "detail": "Detalle de la superficie y daños en español..."},
+  "psa_grade": 0,
+  "psa_label": "Etiqueta PSA en español (ej: Gema Menta, Cerca de Menta, etc)",
+  "qualifier": "NONE",
+  "confidence": 0,
+  "summary": "Resumen general de la evaluación en español..."
+}`;
 
 serve(async (req) => {
   const corsHeaders = {
@@ -97,6 +110,7 @@ serve(async (req) => {
       score_edges: analysis.edges?.score || 0,
       score_surface: analysis.surface?.score || 0,
       psa_grade: analysis.psa_grade || 0,
+      psa_label: analysis.psa_label || "",
       ai_analysis: analysis,
       confidence_pct: confidenceVal,
     }).eq("id", evaluationId);
