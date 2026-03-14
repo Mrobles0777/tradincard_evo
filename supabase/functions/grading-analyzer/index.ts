@@ -2,8 +2,20 @@
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-// Usamos v1beta con el alias 'latest' que es el más resiliente
-const GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent";
+const PSA_PROMPT = (cardType: string) => `
+Eres un experto en grading PSA. Analiza esta carta de ${cardType} y devuelve un JSON con scores (0-10) para: centering, corners, edges, surface. Incluye psa_grade final.
+Formato JSON estricto:
+{
+  "centering": { "score": 0, "front_lr": "50/50", "front_tb": "50/50", "detail": "" },
+  "corners": { "score": 0, "detail": "" },
+  "edges": { "score": 0, "detail": "" },
+  "surface": { "score": 0, "detail": "" },
+  "psa_grade": 0,
+  "psa_label": "",
+  "qualifier": "NONE",
+  "confidence": 0
+}
+`;
 
 serve(async (req) => {
   const corsHeaders = {
@@ -21,6 +33,50 @@ serve(async (req) => {
 
     if (!geminiKey) throw new Error("GEMINI_API_KEY no detectada.");
 
+    // Auto-Descubrimiento de Modelos para evitar 404
+    console.log("[GEMINI] Buscando modelos disponibles para esta API Key...");
+    const modelsReq = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${geminiKey}`);
+    const modelsData = await modelsReq.json();
+    
+    if (!modelsReq.ok) {
+       console.error("[GEMINI LIST ERROR]", JSON.stringify(modelsData));
+       throw new Error(`Error en API Key al listar modelos: ${modelsData.error?.message}`);
+    }
+
+    const availableModels = modelsData.models || [];
+    const modelNames = availableModels.map((m: any) => m.name);
+    console.log(`[GEMINI] Modelos encontrados (${modelNames.length}). Seleccionando el mejor...`);
+
+    // Priorizar versiones modernas, luego fallbacks antiguos
+    const preferredOrder = [
+      "models/gemini-2.5-flash",
+      "models/gemini-2.0-flash",
+      "models/gemini-1.5-flash-latest",
+      "models/gemini-1.5-flash",
+      "models/gemini-1.5-pro",
+      "models/gemini-pro-vision" // Fallback para cuentas antiguas
+    ];
+
+    let selectedModel = "";
+    for (const pref of preferredOrder) {
+      if (modelNames.includes(pref)) {
+        selectedModel = pref;
+        break;
+      }
+    }
+
+    if (!selectedModel) {
+       // Buscar cualquier modelo que soporte generateContent si no hay coincidencias exactas
+       const fallback = availableModels.find((m: any) => 
+         m.supportedGenerationMethods?.includes("generateContent")
+       );
+       if (!fallback) throw new Error("A tu Google API Key no le quedan modelos compatibles con texto/visión.");
+       selectedModel = fallback.name;
+    }
+
+    console.log(`[GEMINI SELECTED] Usando modelo -> ${selectedModel}`);
+    const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/${selectedModel}:generateContent`;
+
     const { imageBase64, cardType, evaluationId } = await req.json();
     console.log(`[EXEC] ID: ${evaluationId}, Size: ${imageBase64?.length || 0}`);
 
@@ -32,7 +88,7 @@ serve(async (req) => {
       body: JSON.stringify({
         contents: [{
           parts: [
-            { text: `Analiza esta carta de ${cardType} y devuelve un JSON PSA: { "centering": {"score": 0}, "corners": {"score": 0}, "edges": {"score": 0}, "surface": {"score": 0}, "psa_grade": 0, "psa_label": "", "confidence": 0 }` },
+            { text: PSA_PROMPT(cardType) },
             { inline_data: { mime_type: "image/jpeg", data: imageBase64 } }
           ]
         }],
@@ -44,7 +100,7 @@ serve(async (req) => {
 
     if (!response.ok) {
       console.error("[GEMINI ERROR]", JSON.stringify(result));
-      return new Response(JSON.stringify({ error: result.error?.message || "Error Gemini API" }), {
+      return new Response(JSON.stringify({ error: result.error?.message || "Error Gemini API", code: result.error?.code }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" }
       });
