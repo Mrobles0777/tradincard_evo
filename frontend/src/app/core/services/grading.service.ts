@@ -22,7 +22,9 @@ export class GradingService {
     }
     
     if (data && data.error) {
-      throw new Error(data.error);
+      const extra = data.raw_text || data.details || "";
+      const msg = extra ? `${data.error} | RAW_DETAILS: ${typeof extra === 'object' ? JSON.stringify(extra) : extra}` : data.error;
+      throw new Error(msg);
     }
 
     return data;
