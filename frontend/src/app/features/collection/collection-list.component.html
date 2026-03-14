@@ -9,6 +9,9 @@
       <div class="thumb">
         <img [src]="ev.thumbnailUrl" alt="Thumbnail">
         <div class="grade-badge-mini">{{ ev.psa_grade }}</div>
+        <button class="delete-btn" (click)="deleteEvaluation($event, ev.id)" title="Borrar">
+          <span class="icon-trash">🗑️</span>
+        </button>
       </div>
       <div class="info">
         <h3>{{ ev.card_name_free || 'Sin nombre' }}</h3>

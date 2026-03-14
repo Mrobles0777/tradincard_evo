@@ -51,4 +51,13 @@ export class GradingService {
     if (error) throw error;
     return data;
   }
+
+  async deleteEvaluation(id: string) {
+    const { error } = await this.supabase.client
+      .from('evaluations')
+      .delete()
+      .eq('id', id);
+
+    if (error) throw error;
+  }
 }
