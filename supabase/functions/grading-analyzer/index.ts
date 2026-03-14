@@ -46,7 +46,7 @@ Deno.serve(async (req) => {
     
     console.log(`[LOG] Iniciando análisis Gemini para eval: ${evaluationId}`);
 
-    const genUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiKey}`;
+    const genUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${geminiKey}`;
     
     const geminiRes = await fetch(genUrl, {
       method: "POST",
