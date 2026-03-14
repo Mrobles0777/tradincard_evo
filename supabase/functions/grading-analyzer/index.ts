@@ -47,6 +47,8 @@ serve(async (req) => {
     
     // Usamos v1beta y el modelo gemini-1.5-flash para máxima compatibilidad estable durante el debug
     const genUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${geminiKey}`;
+    console.log(`[DEBUG] Usando Modelo: gemini-3-flash-preview`);
+    console.log(`[DEBUG] Prefijo Key: ${geminiKey?.substring(0, 8)}...`);
     
     const geminiRes = await fetch(genUrl, {
       method: "POST",
