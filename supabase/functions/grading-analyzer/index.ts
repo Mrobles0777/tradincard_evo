@@ -2,8 +2,8 @@
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-// Usamos el modelo legacy 'gemini-pro-vision' que es el más universalmente disponible para imágenes
-const GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro-vision:generateContent";
+// Usamos el modelo más reciente 'gemini-2.5-flash' o 'gemini-2.0-flash'
+const GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
 
 const PSA_PROMPT = (cardType: string) => `
 Eres un experto en grading PSA. Analiza detalladamente esta imagen de una carta de ${cardType} y devuelve un análisis en formato JSON estricto.
