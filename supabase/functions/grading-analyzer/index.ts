@@ -1,6 +1,5 @@
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { GoogleGenAI, HarmCategory, HarmBlockThreshold } from "npm:@google/generative-ai";
 
 const PSA_PROMPT = (cardType: string) => `Analiza pacientemente esta imagen de una carta de ${cardType} para grading PSA. 
 REGLA CRÍTICA DE NOTA: Si la carta presenta CUALQUIER tipo de arruga, quiebre, doblez o daño estructural (creases/wrinkles), la nota final (psa_grade) NO PUEDE SER MAYOR A 5.0, sin importar qué tan perfecta esté el resto de la carta.
@@ -24,9 +23,12 @@ serve(async (req) => {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Access-Control-Max-Age': '86400',
   };
 
-  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { headers: corsHeaders });
+  }
 
   try {
     const geminiKey = Deno.env.get("GEMINI_API_KEY")?.trim();
@@ -34,10 +36,7 @@ serve(async (req) => {
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
     if (!geminiKey || !supabaseUrl || !supabaseKey) {
-      return new Response(JSON.stringify({ error: "Configuración incompleta: faltan variables de entorno." }), { 
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" } 
-      });
+      throw new Error("Variables de entorno incompletas.");
     }
 
     const { imageBase64, cardType, evaluationId } = await req.json();
@@ -60,62 +59,46 @@ serve(async (req) => {
       base64Data = parts[1];
     }
 
-    const ai = new GoogleGenAI(geminiKey);
-    const model = ai.getGenerativeModel({ 
-      model: "gemini-3-flash",
-      generationConfig: { responseMimeType: "application/json" },
-      safetySettings: [
-        { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
-        { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
-        { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
-        { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE },
-      ]
-    });
+    console.log(`[EXEC] Llamando a Gemini API... (Mime: ${mimeType}, Size: ${base64Data.length})`);
     
-    let analysis;
-    try {
-      console.log(`[EXEC] Llamando a Gemini 1.5 Flash... (Mime: ${mimeType}, Size: ${base64Data.length})`);
-      const result = await model.generateContent([
-        {
-          inlineData: {
-            data: base64Data,
-            mimeType: mimeType
-          }
-        },
-        { text: PSA_PROMPT(cardType) }
-      ]);
-      
-      const response = result.response;
-      let text = "";
-      
-      try {
-        text = response.text() || "";
-      } catch (textErr) {
-        console.error("[RESPONSE TEXT ERROR]", textErr);
-        const feedback = response.promptFeedback;
-        throw new Error(`Gemini no devolvió texto. Razón: ${feedback?.blockReason || 'Desconocida'}`);
-      }
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiKey}`;
+    
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{
+          parts: [
+            { inlineData: { mimeType: mimeType, data: base64Data } },
+            { text: PSA_PROMPT(cardType) }
+          ]
+        }],
+        generationConfig: {
+          responseMimeType: "application/json",
+          temperature: 0.1
+        }
+      })
+    });
 
-      // Limpiar bloques de código markdown
-      text = text.replace(/```json\n?/gi, '').replace(/```\n?/g, '').trim();
-      
-      const jsonMatch = text.match(/\{[\s\S]*\}/);
-      if (!jsonMatch) throw new Error("La IA no devolvió un formato JSON válido.");
-      
-      analysis = JSON.parse(jsonMatch[0]);
-    } catch (genErr: any) {
-      console.error("[GEMINI ERROR]", genErr);
-      return new Response(JSON.stringify({ error: `IA Google Rechazó: ${genErr.message}` }), { 
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" } 
-      });
+    if (!response.ok) {
+      const errData = await response.json();
+      console.error("[GEMINI API ERROR]", errData);
+      throw new Error(`Google API respondió: ${errData.error?.message || response.statusText}`);
     }
 
-    if (!analysis) {
-       return new Response(JSON.stringify({ error: "La IA no pudo procesar la imagen." }), { 
-         status: 500,
-         headers: { ...corsHeaders, "Content-Type": "application/json" } 
-       });
+    const result = await response.json();
+    const text = result.candidates?.[0]?.content?.parts?.[0]?.text;
+    
+    if (!text) {
+      throw new Error("La IA no devolvió contenido.");
+    }
+
+    let analysis;
+    try {
+      analysis = JSON.parse(text);
+    } catch (e) {
+      console.error("[PARSE ERROR]", text);
+      throw new Error("La IA no devolvió un formato JSON válido.");
     }
     
     let confidenceVal = analysis.confidence || 0;
