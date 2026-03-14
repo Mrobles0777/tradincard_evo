@@ -21,7 +21,8 @@ IMPORTANTE: El valor de "psa_grade" debe ser un número entre 1.0 y 10.0 (nunca 
   "psa_label": "Etiqueta PSA en español (ej: Gema Menta, Cerca de Menta, etc)",
   "qualifier": "NONE",
   "confidence": 0,
-  "summary": "Resumen general de la evaluación en español..."
+  "summary": "Resumen general de la evaluación en español...",
+  "estimated_value": 0
 }`;
 
 serve(async (req) => {
@@ -83,6 +84,7 @@ serve(async (req) => {
       psa_label: analysis.psa_label || "",
       ai_analysis: analysis,
       confidence_pct: Math.round((analysis.confidence || 0) * 100) || 50,
+      estimated_value: parseFloat(analysis.estimated_value) || null,
     }).eq("id", evaluationId);
 
     if (dbError) throw new Error(`DB Error: ${dbError.message}`);

@@ -76,6 +76,30 @@ h1 {
   font-size: 14px;
 }
 
+.price-bubble {
+  display: inline-flex;
+  flex-direction: column;
+  background: rgba(0, 255, 136, 0.1);
+  border: 1px solid rgba(0, 255, 136, 0.2);
+  padding: 8px 16px;
+  border-radius: 12px;
+  margin-top: 12px;
+}
+
+.price-bubble .label {
+  font-size: 10px;
+  text-transform: uppercase;
+  color: #00ff88;
+  letter-spacing: 0.5px;
+  font-weight: 700;
+}
+
+.price-bubble .value {
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: #fff;
+}
+
 .scores-grid {
   display: flex;
   flex-direction: column;
