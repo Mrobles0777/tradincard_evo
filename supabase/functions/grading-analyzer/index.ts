@@ -5,21 +5,8 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 // Usamos el modelo más reciente 'gemini-2.5-flash' o 'gemini-2.0-flash'
 const GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
 
-const PSA_PROMPT = (cardType: string) => `
-Eres un experto en grading PSA. Analiza detalladamente esta imagen de una carta de ${cardType} y devuelve un análisis en formato JSON estricto.
-Debes evaluar los 4 criterios (centering, corners, edges, surface) con una nota de 0 a 10.
-Devuelve EXACTAMENTE este formato JSON y nada más, sin bloques de código markdown:
-{
-  "centering": { "score": 0, "front_lr": "50/50", "front_tb": "50/50", "detail": "..." },
-  "corners": { "score": 0, "detail": "..." },
-  "edges": { "score": 0, "detail": "..." },
-  "surface": { "score": 0, "detail": "..." },
-  "psa_grade": 0,
-  "psa_label": "...",
-  "qualifier": "NONE",
-  "confidence": 0
-}
-`;
+const PSA_PROMPT = (cardType: string) => `Analiza pacientemente esta imagen de una carta de ${cardType} para grading PSA. Devuelve estrictamente este JSON y nada más:
+{"centering":{"score":0,"front_lr":"50/50","front_tb":"50/50","detail":"..."},"corners":{"score":0,"detail":"..."},"edges":{"score":0,"detail":"..."},"surface":{"score":0,"detail":"..."},"psa_grade":0,"psa_label":"...","qualifier":"NONE","confidence":0}`;
 
 serve(async (req) => {
   const corsHeaders = {
@@ -58,7 +45,7 @@ serve(async (req) => {
         }],
         generationConfig: { 
           temperature: 0.1, 
-          maxOutputTokens: 800,
+          maxOutputTokens: 2048,
           responseMimeType: "application/json" 
         }
       })
