@@ -62,6 +62,8 @@ serve(async (req) => {
       })
     });
 
+    console.log(`[LOG] Respuesta Gemini recibida: ${geminiRes.status}`);
+
     if (!geminiRes.ok) {
       const err = await geminiRes.json();
       throw new Error(`Google AI: ${err.error?.message || 'Error desconocido'}`);
@@ -75,19 +77,29 @@ serve(async (req) => {
     const scoreVal = (val: any) => parseFloat(val) || 0;
 
     const supabase = createClient(supabaseUrl, supabaseKey);
-    const { error: dbError } = await supabase.from("evaluations").update({
-      score_centering: scoreVal(analysis.centering?.score),
-      score_corners: scoreVal(analysis.corners?.score),
-      score_edges: scoreVal(analysis.edges?.score),
-      score_surface: scoreVal(analysis.surface?.score),
-      psa_grade: scoreVal(analysis.psa_grade) || 1,
-      psa_label: analysis.psa_label || "",
-      ai_analysis: analysis,
-      confidence_pct: Math.round((analysis.confidence || 0) * 100) || 50,
-      estimated_value: parseFloat(analysis.estimated_value) || null,
-    }).eq("id", evaluationId);
+    console.log(`[LOG] Actualizando DB para eval: ${evaluationId}`);
+    
+    try {
+      const { error: dbError } = await supabase.from("evaluations").update({
+        score_centering: scoreVal(analysis.centering?.score),
+        score_corners: scoreVal(analysis.corners?.score),
+        score_edges: scoreVal(analysis.edges?.score),
+        score_surface: scoreVal(analysis.surface?.score),
+        psa_grade: scoreVal(analysis.psa_grade) || 1,
+        psa_label: analysis.psa_label || "",
+        ai_analysis: analysis,
+        confidence_pct: Math.round((analysis.confidence || 0) * 100) || 50,
+        estimated_value: analysis.estimated_value ? parseFloat(analysis.estimated_value) : null,
+      }).eq("id", evaluationId);
 
-    if (dbError) throw new Error(`DB Error: ${dbError.message}`);
+      if (dbError) {
+        console.error(`[DB ERROR DETAILS] ${JSON.stringify(dbError)}`);
+        throw new Error(`DB Error: ${dbError.message} (Verifica si la columna estimated_value existe)`);
+      }
+    } catch (dbErr: any) {
+      console.error(`[DB EXCEPTION] ${dbErr.message}`);
+      throw dbErr;
+    }
 
     return new Response(JSON.stringify({ success: true, analysis }), {
       status: 200,

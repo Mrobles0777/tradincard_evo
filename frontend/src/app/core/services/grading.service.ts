@@ -17,14 +17,20 @@ export class GradingService {
     });
 
     if (error) {
-      console.error('[INVOKE ERROR]', error);
-      // Intentar extraer el mensaje de error específico del cuerpo de la respuesta 500
-      if (error instanceof Error && (error as any).context) {
-        try {
-          const body = await (error as any).context.json();
+      console.error('[INVOKE ERROR FULL OBJECT]', error);
+      
+      // Intentar extraer el mensaje de error específico de Supabase FunctionsHttpError
+      try {
+        const anyErr = error as any;
+        const response = anyErr.context || anyErr.response;
+        if (response && typeof response.json === 'function') {
+          const body = await response.json();
           if (body && body.error) throw new Error(body.error);
-        } catch (e) {}
+        }
+      } catch (e) {
+        if (e instanceof Error && e.message !== 'Edge Function returned a non-2xx status code') throw e;
       }
+      
       throw error;
     }
 
