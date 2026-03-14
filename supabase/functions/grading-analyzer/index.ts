@@ -45,7 +45,7 @@ serve(async (req) => {
     const base64Data = imageBase64.includes(',') ? imageBase64.split(',')[1] : imageBase64;
     
     // Usamos v1beta y el modelo gemini-1.5-flash para máxima compatibilidad estable durante el debug
-    const genUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiKey}`;
+    const genUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${geminiKey}`;
     
     const geminiRes = await fetch(genUrl, {
       method: "POST",
