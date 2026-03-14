@@ -1,4 +1,3 @@
-import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const PSA_PROMPT = (cardType: string) => `Analiza pacientemente esta imagen de una carta de ${cardType} para grading PSA. 
@@ -18,126 +17,133 @@ IMPORTANTE: El valor de "psa_grade" debe ser un número entre 1.0 y 10.0 (nunca 
   "summary": "Resumen general de la evaluación en español..."
 }`;
 
-serve(async (req) => {
-  const corsHeaders = {
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-    'Access-Control-Allow-Methods': 'POST, OPTIONS',
-    'Access-Control-Max-Age': '86400',
-  };
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Access-Control-Max-Age': '86400',
+};
 
+Deno.serve(async (req) => {
+  // CORS Preflight
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }
 
   try {
+    console.log("[LOG] --- INICIO DE PETICIÓN ---");
+    
+    // 1. Verificar variables de entorno
     const geminiKey = Deno.env.get("GEMINI_API_KEY")?.trim();
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
     if (!geminiKey || !supabaseUrl || !supabaseKey) {
-      throw new Error("Variables de entorno incompletas.");
+      console.error("[LOG] Error: Faltan secretos en Supabase (GEMINI_API_KEY, SUPABASE_URL o SUPABASE_SERVICE_ROLE_KEY)");
+      throw new Error("Configuración incompleta en el servidor.");
     }
 
-    const { imageBase64, cardType, evaluationId } = await req.json();
-    console.log(`[EXEC] Iniciando grading ID: ${evaluationId}`);
-
-    if (!imageBase64) {
-      return new Response(JSON.stringify({ error: "No se recibió ninguna imagen." }), { 
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" } 
-      });
+    // 2. Parsear el body manualmente para capturar errores
+    const jsonText = await req.text();
+    console.log(`[LOG] Tamaño del body recibido: ${Math.round(jsonText.length / 1024)} KB`);
+    
+    let body;
+    try {
+      body = JSON.parse(jsonText);
+    } catch (e) {
+      console.error("[LOG] Error parseando JSON:", e.message);
+      throw new Error("El cuerpo de la petición no es un JSON válido.");
     }
 
-    // Detectar MimeType y Base64 real
+    const { imageBase64, cardType, evaluationId } = body;
+    if (!imageBase64 || !evaluationId) {
+      console.error("[LOG] Error: faltan campos obligatorios");
+      throw new Error("Faltan datos requeridos (imagen o ID de evaluación).");
+    }
+
+    // 3. Limpiar base64 y detectar tipo
     let mimeType = 'image/jpeg';
     let base64Data = imageBase64;
-    
     if (imageBase64.includes(';base64,')) {
       const parts = imageBase64.split(';base64,');
-      mimeType = parts[0].split(':')[1];
+      mimeType = parts[0].split(':')[1] || 'image/jpeg';
       base64Data = parts[1];
     }
 
-    console.log(`[EXEC] Llamando a Gemini API... (Mime: ${mimeType}, Size: ${base64Data.length})`);
+    // 4. Llamar a Gemini API (v1beta para mayor compatibilidad con responseMimeType: json)
+    console.log(`[LOG] Solicitando análisis a Gemini (gemini-1.5-flash)...`);
+    const genUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiKey}`;
     
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiKey}`;
-    
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+    const geminiResponse = await fetch(genUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         contents: [{
           parts: [
-            { inlineData: { mimeType: mimeType, data: base64Data } },
+            { inlineData: { mimeType, data: base64Data } },
             { text: PSA_PROMPT(cardType) }
           ]
         }],
         generationConfig: {
           responseMimeType: "application/json",
           temperature: 0.1
-        }
+        },
+        safetySettings: [
+          { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
+          { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
+          { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
+          { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" }
+        ]
       })
     });
 
-    if (!response.ok) {
-      const errData = await response.json();
-      console.error("[GEMINI API ERROR]", errData);
-      throw new Error(`Google API respondió: ${errData.error?.message || response.statusText}`);
+    if (!geminiResponse.ok) {
+      const errorJson = await geminiResponse.json();
+      console.error("[LOG] Error de Google API:", JSON.stringify(errorJson));
+      throw new Error(`Google API respondió: ${errorJson.error?.message || 'Error desconocido'}`);
     }
 
-    const result = await response.json();
-    const text = result.candidates?.[0]?.content?.parts?.[0]?.text;
+    const geminiResult = await geminiResponse.json();
+    const aiText = geminiResult.candidates?.[0]?.content?.parts?.[0]?.text;
     
-    if (!text) {
-      throw new Error("La IA no devolvió contenido.");
+    if (!aiText) {
+      console.error("[LOG] Respuesta de IA vacía o bloqueada:", JSON.stringify(geminiResult));
+      throw new Error("La IA no devolvió un análisis. Es posible que el contenido haya sido bloqueado o la imagen sea demasiado borrosa.");
     }
 
-    let analysis;
-    try {
-      analysis = JSON.parse(text);
-    } catch (e) {
-      console.error("[PARSE ERROR]", text);
-      throw new Error("La IA no devolvió un formato JSON válido.");
-    }
+    console.log("[LOG] Análisis recibido exitosamente.");
     
-    let confidenceVal = analysis.confidence || 0;
-    if (confidenceVal <= 1 && confidenceVal > 0) {
-      confidenceVal = confidenceVal * 100; // Convert 0.95 to 95
-    }
-    confidenceVal = Math.round(confidenceVal);
+    // 5. Procesar y Guardar en DB
+    const analysis = JSON.parse(aiText);
+    let confidenceVal = Math.round((analysis.confidence || 0) <= 1 ? (analysis.confidence || 0) * 100 : (analysis.confidence || 0));
 
-    const supabase = createClient(supabaseUrl!, supabaseKey!);
+    const supabase = createClient(supabaseUrl, supabaseKey);
     const { error: dbError } = await supabase.from("evaluations").update({
       score_centering: analysis.centering?.score || 0,
       score_corners: analysis.corners?.score || 0,
       score_edges: analysis.edges?.score || 0,
       score_surface: analysis.surface?.score || 0,
-      psa_grade: analysis.psa_grade || 0,
+      psa_grade: analysis.psa_grade || 1,
       psa_label: analysis.psa_label || "",
       ai_analysis: analysis,
       confidence_pct: confidenceVal,
     }).eq("id", evaluationId);
 
     if (dbError) {
-       console.error("[DB ERROR]", dbError);
-       return new Response(JSON.stringify({ error: `Error guardando resultados: ${dbError.message}` }), { 
-         status: 500,
-         headers: { ...corsHeaders, "Content-Type": "application/json" } 
-       });
+      console.error("[LOG] Error al actualizar base de datos:", dbError);
+      throw new Error(`Error de base de datos: ${dbError.message}`);
     }
 
+    console.log("[LOG] --- FIN DE PETICIÓN EXITOSA ---");
     return new Response(JSON.stringify({ success: true, analysis }), {
-      status: 200,
       headers: { ...corsHeaders, "Content-Type": "application/json" }
     });
 
-  } catch (error: any) {
-    console.error(`[FATAL] ${error.message}`);
-    return new Response(JSON.stringify({ error: `Error Fatal Función: ${error.message}` }), {
+  } catch (err: any) {
+    console.error("[LOG] CRITICAL ERROR:", err.message);
+    return new Response(JSON.stringify({ error: err.message }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" }
     });
   }
 });
-
