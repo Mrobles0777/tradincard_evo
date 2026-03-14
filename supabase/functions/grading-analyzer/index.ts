@@ -62,7 +62,7 @@ serve(async (req) => {
 
     const ai = new GoogleGenAI(geminiKey);
     const model = ai.getGenerativeModel({ 
-      model: "gemini-1.5-flash",
+      model: "gemini-3-flash",
       generationConfig: { responseMimeType: "application/json" },
       safetySettings: [
         { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
