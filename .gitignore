@@ -1,0 +1,8 @@
+.env
+node_modules/
+dist/
+.angular/
+.vscode/
+*.log
+security_audit_report.html
+security_audit_report.md

@@ -32,16 +32,39 @@ serve(async (req) => {
 
   try {
     const geminiKey = Deno.env.get("GEMINI_API_KEY")?.trim();
-    const supabaseUrl = Deno.env.get("SUPABASE_URL");
-    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
+    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 
     if (!geminiKey) throw new Error("Falta GEMINI_API_KEY.");
     if (!supabaseUrl || !supabaseKey) throw new Error("Faltan logs de Supabase.");
 
+    const authHeader = req.headers.get('Authorization');
     const body = await req.json().catch(() => ({}));
     const { imageBase64, cardType, evaluationId } = body;
 
     if (!imageBase64 || !evaluationId) throw new Error("Faltan datos de entrada.");
+
+    // VALIDACIÓN DE SEGURIDAD: Verificar propiedad del registro
+    const userClient = createClient(supabaseUrl, Deno.env.get("SUPABASE_ANON_KEY") ?? "", {
+      global: { headers: { Authorization: authHeader || "" } }
+    });
+
+    const { data: evalData, error: ownerError } = await userClient
+      .from("evaluations")
+      .select("user_id")
+      .eq("id", evaluationId)
+      .single();
+
+    if (ownerError || !evalData) {
+      console.error(`[SECURITY] Fallo de propiedad. Eval: ${evaluationId}, Error: ${ownerError?.message}`);
+      return new Response(JSON.stringify({ error: "No tienes permiso para analizar esta evaluación o el registro no existe." }), {
+        status: 403,
+        headers: { ...corsHeaders, "Content-Type": "application/json" }
+      });
+    }
+
+    // Permitir si es del usuario autenticado O si es una evaluación demo (user_id IS NULL)
+    // Nota: Si el usuario quiere restringir demo, esto se puede ajustar aquí.
 
     const base64Data = imageBase64.includes(',') ? imageBase64.split(',')[1] : imageBase64;
     

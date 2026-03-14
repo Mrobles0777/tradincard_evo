@@ -2,10 +2,11 @@
   "name": "frontend",
   "version": "0.0.0",
   "scripts": {
+    "config": "node scripts/set-env.js",
     "ng": "ng",
-    "start": "ng serve",
-    "build": "ng build",
-    "watch": "ng build --watch --configuration development",
+    "start": "npm run config && ng serve",
+    "build": "npm run config && ng build",
+    "watch": "npm run config && ng build --watch --configuration development",
     "test": "ng test"
   },
   "private": true,
