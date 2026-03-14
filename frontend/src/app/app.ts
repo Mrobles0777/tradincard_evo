@@ -12,16 +12,22 @@ import { CommonModule } from '@angular/common';
       <router-outlet></router-outlet>
     </main>
 
-    <nav class="tab-bar" *ngIf="isLoggedIn()">
-      <a routerLink="/capture" routerLinkActive="active" class="tab-item">
+    <!-- Botón Hamburguesa para abrir/cerrar el menú -->
+    <button class="menu-toggle" (click)="toggleMenu()" *ngIf="isLoggedIn()">
+      <span class="icon">{{ isMenuOpen() ? '✖' : '☰' }}</span>
+    </button>
+
+    <!-- Panel Superior Colapsable -->
+    <nav class="top-bar" *ngIf="isLoggedIn()" [class.open]="isMenuOpen()">
+      <a routerLink="/capture" routerLinkActive="active" class="tab-item" (click)="isMenuOpen.set(false)">
         <span class="icon">📷</span>
         <span class="label">Escanear</span>
       </a>
-      <a routerLink="/collection" routerLinkActive="active" class="tab-item">
+      <a routerLink="/collection" routerLinkActive="active" class="tab-item" (click)="isMenuOpen.set(false)">
         <span class="icon">🎴</span>
         <span class="label">Colección</span>
       </a>
-      <button (click)="logout()" class="tab-item logout-btn">
+      <button (click)="logout(); isMenuOpen.set(false)" class="tab-item logout-btn">
         <span class="icon">🚪</span>
         <span class="label">Salir</span>
       </button>
@@ -34,20 +40,50 @@ import { CommonModule } from '@angular/common';
       color: #fff;
     }
 
-    .tab-bar {
+    .menu-toggle {
       position: fixed;
-      bottom: 0;
+      top: 20px;
+      right: 20px;
+      width: 45px;
+      height: 45px;
+      border-radius: 50%;
+      background: rgba(15, 15, 15, 0.9);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      color: #fff;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      z-index: 1001;
+      cursor: pointer;
+      backdrop-filter: blur(10px);
+      transition: all 0.3s ease;
+    }
+
+    .menu-toggle:hover {
+      background: rgba(40, 40, 40, 0.9);
+    }
+
+    .top-bar {
+      position: fixed;
+      top: 0;
       left: 0;
       right: 0;
-      height: 70px;
-      background: rgba(15, 15, 15, 0.8);
+      background: rgba(15, 15, 15, 0.95);
       backdrop-filter: blur(20px);
-      border-top: 1px solid rgba(255, 255, 255, 0.1);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
       display: flex;
-      justify-content: space-around;
+      justify-content: center;
       align-items: center;
-      padding-bottom: env(safe-area-inset-bottom);
+      padding: 80px 20px 20px 20px;
+      gap: 30px;
       z-index: 1000;
+      transform: translateY(-100%);
+      transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+      box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+    }
+
+    .top-bar.open {
+      transform: translateY(0);
     }
 
     .tab-item {
@@ -55,12 +91,17 @@ import { CommonModule } from '@angular/common';
       flex-direction: column;
       align-items: center;
       text-decoration: none;
-      color: #666;
-      gap: 4px;
+      color: #888;
+      gap: 8px;
       transition: all 0.3s;
       background: none;
       border: none;
       cursor: pointer;
+      padding: 10px;
+    }
+
+    .tab-item:hover {
+      color: #ddd;
     }
 
     .tab-item.active {
@@ -68,11 +109,11 @@ import { CommonModule } from '@angular/common';
     }
 
     .icon {
-      font-size: 20px;
+      font-size: 24px;
     }
 
     .label {
-      font-size: 10px;
+      font-size: 11px;
       font-weight: 600;
       text-transform: uppercase;
       letter-spacing: 0.5px;
@@ -85,6 +126,7 @@ import { CommonModule } from '@angular/common';
 })
 export class AppComponent implements OnInit {
   isLoggedIn = signal(false);
+  isMenuOpen = signal(false);
 
   constructor(private supabase: SupabaseService, private router: Router) {}
 
@@ -97,6 +139,10 @@ export class AppComponent implements OnInit {
         this.router.navigate(['/capture']);
       }
     });
+  }
+
+  toggleMenu() {
+    this.isMenuOpen.set(!this.isMenuOpen());
   }
 
   async logout() {
