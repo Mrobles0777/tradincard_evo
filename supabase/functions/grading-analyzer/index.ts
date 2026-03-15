@@ -12,6 +12,8 @@ REGLA CRÍTICA DE NOTA: Si la carta presenta CUALQUIER tipo de arruga, quiebre, 
 
 Devuelve estrictamente este JSON en ESPAÑOL (todos los campos "detail", "psa_label" y "summary"). 
 IMPORTANTE: El valor de "psa_grade" debe ser un número entre 1.0 y 10.0 (nunca 0).
+IMPORTANTE: El campo "estimated_value" DEBE ESTAR EN DÓLARES AMERICANOS (USD).
+
 {
   "centering": {"score": 0, "front_lr": "50/50", "front_tb": "50/50", "detail": "Detalle del centrado en español..."},
   "corners": {"score": 0, "detail": "Detalle de las esquinas en español..."},

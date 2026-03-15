@@ -19,6 +19,10 @@ export class GradingResultComponent implements OnInit, OnDestroy {
   error = signal<string | null>(null);
   pollingInterval: any;
 
+  readonly USD_TO_CLP = 980;
+
+  clpValue = signal<number | null>(null);
+
   constructor(
     private route: ActivatedRoute,
     private gradingService: GradingService,
@@ -75,6 +79,9 @@ export class GradingResultComponent implements OnInit, OnDestroy {
       const data = await this.gradingService.getEvaluation(id);
       if (data) {
         this.evaluation.set(data);
+        if (data.estimated_value) {
+          this.clpValue.set(data.estimated_value * this.USD_TO_CLP);
+        }
         const fileName = `${data.user_id}/${data.id}_front.jpg`;
         this.imageUrl.set(this.supabaseService.getPublicUrl(fileName));
       }

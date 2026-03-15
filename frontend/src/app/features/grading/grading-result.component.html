@@ -25,7 +25,10 @@
         <p>{{ evaluation().card_type | titlecase }}</p>
         <div class="price-bubble" *ngIf="evaluation().estimated_value">
           <span class="label">Valor Estimado</span>
-          <span class="value">{{ evaluation().estimated_value | currency:'USD':'symbol':'1.0-0' }}</span>
+          <div class="values-stack">
+            <span class="value usd">{{ evaluation().estimated_value | currency:'USD':'symbol':'1.0-0' }}</span>
+            <span class="value clp">{{ clpValue() | currency:'CLP':'symbol-narrow':'1.0-0' }}</span>
+          </div>
         </div>
       </div>
     </div>
