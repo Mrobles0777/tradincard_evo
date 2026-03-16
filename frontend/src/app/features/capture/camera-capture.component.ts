@@ -136,8 +136,9 @@ export class CameraCaptureComponent implements OnInit, OnDestroy {
         const fullBase64 = base64Image.startsWith('data:') ? base64Image : `data:image/jpeg;base64,${base64Image}`;
         const croppedBase64 = await this.imageProcessingService.detectAndCropCard(fullBase64);
         base64Image = croppedBase64.split(',')[1];
+        console.log('[Capture] Cropping successful, sending processed image to AI.');
       } catch (cropErr) {
-        console.warn('Cropping failed, using original image:', cropErr);
+        console.error('[Capture] Cropping failed, falling back to original:', cropErr);
       } finally {
         this.isProcessing.set(false);
       }

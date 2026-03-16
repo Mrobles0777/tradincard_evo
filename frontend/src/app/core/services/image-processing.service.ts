@@ -74,7 +74,8 @@ export class ImageProcessingService {
             }
           }
 
-          if (maxContour && maxArea > (src.rows * src.cols * 0.1)) {
+            if (maxContour && maxArea > (src.rows * src.cols * 0.1)) {
+            console.log('%c[ImageProcessing] Card detected!', 'color: green; font-weight: bold');
             // Get corners
             let points = [];
             for (let i = 0; i < 4; i++) {
@@ -136,6 +137,7 @@ export class ImageProcessingService {
 
             resolve(resultBase64);
           } else {
+            console.warn('[ImageProcessing] No card detected or area too small. Using original image.');
             // No card detected, return original
             src.delete(); gray.delete(); blurred.delete(); edged.delete();
             contours.delete(); hierarchy.delete();
