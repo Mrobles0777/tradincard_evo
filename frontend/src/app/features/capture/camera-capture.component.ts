@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { CameraService } from '../../core/services/camera.service';
 import { GradingService } from '../../core/services/grading.service';
 import { SupabaseService } from '../../core/services/supabase.service';
+import { ImageProcessingService } from '../../core/services/image-processing.service';
 import { Router } from '@angular/router';
 
 @Component({
@@ -16,6 +17,7 @@ export class CameraCaptureComponent implements OnInit, OnDestroy {
   @ViewChild('videoElement') videoElement!: ElementRef<HTMLVideoElement>;
 
   isAnalyzing = signal(false);
+  isProcessing = signal(false);
   method = signal<'upload' | 'camera'>('upload');
   cardType = signal<'pokemon' | 'yugioh' | 'football'>('pokemon');
   error = signal<string | null>(null);
@@ -26,6 +28,7 @@ export class CameraCaptureComponent implements OnInit, OnDestroy {
     private cameraService: CameraService,
     private gradingService: GradingService,
     private supabaseService: SupabaseService,
+    private imageProcessingService: ImageProcessingService,
     private router: Router
   ) {}
 
@@ -127,6 +130,18 @@ export class CameraCaptureComponent implements OnInit, OnDestroy {
     this.error.set(null);
 
     try {
+      // 0. Crop and process image
+      this.isProcessing.set(true);
+      try {
+        const fullBase64 = base64Image.startsWith('data:') ? base64Image : `data:image/jpeg;base64,${base64Image}`;
+        const croppedBase64 = await this.imageProcessingService.detectAndCropCard(fullBase64);
+        base64Image = croppedBase64.split(',')[1];
+      } catch (cropErr) {
+        console.warn('Cropping failed, using original image:', cropErr);
+      } finally {
+        this.isProcessing.set(false);
+      }
+
       // 1. Create evaluation entry
       const user = await this.supabaseService.getUser();
       const evaluation = await this.gradingService.createEvaluation({

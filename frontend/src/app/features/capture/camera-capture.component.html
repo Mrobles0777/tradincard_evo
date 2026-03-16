@@ -60,7 +60,7 @@
         </div>
         <div *ngIf="isAnalyzing()" class="analysis-state">
           <span class="loader"></span>
-          <span>Analizando...</span>
+          <span>{{ isProcessing() ? 'Recortando...' : 'Analizando...' }}</span>
         </div>
       </button>
     </div>
